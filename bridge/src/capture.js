@@ -2,13 +2,15 @@
 // game window and decode the addon's pixel strip.
 //
 // Hyprland (and other wlroots compositors) allow screencopy, so `grim` can read the
-// game's pixels on Wayland. X11 sessions use ImageMagick's `import`.
+// game's pixels on Wayland. X11 sessions use ImageMagick's `import`. macOS uses its
+// own `screencapture`, which needs the Screen Recording permission.
 
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
-import { decodeImage, parsePPM, CELLS_PER_ROW, MAX_ROWS } from './codec.js';
+import { decodeImage, parsePPM, parseBMP, CELLS_PER_ROW, MAX_ROWS } from './codec.js';
 
 // A service may start before the session exports WAYLAND_DISPLAY; find the socket.
 function captureEnv() {
@@ -109,6 +111,60 @@ async function hyprWindow(pid) {
 }
 
 // ---------------------------------------------------------------------------
+// macOS: CoreGraphics' window list through JXA (osascript ships with the system, so
+// there's nothing to compile), then `screencapture` for the pixels.
+
+// Prints { windows, screens } for windows owned by the pid, or by an app called Wow
+// (the client's process name) or World of Warcraft. Window bounds are in points with
+// the origin at the top-left of the main display; screens come from NSScreen, whose
+// origin is bottom-left.
+const MAC_WINDOWS_JXA = `
+ObjC.import('CoreGraphics');
+ObjC.import('AppKit');
+function run(argv) {
+  const pid = Number(argv[0]) || 0;
+  const arr = ObjC.castRefToObject($.CGWindowListCopyWindowInfo(16, 0));
+  const windows = [];
+  for (let i = 0; i < arr.count; i++) {
+    const w = arr.objectAtIndex(i);
+    const v = (k) => { const x = w.objectForKey(k); return x.isNil() ? null : x.js; };
+    const owner = v('kCGWindowOwnerName');
+    const wpid = v('kCGWindowOwnerPID');
+    if (wpid !== pid && owner !== 'Wow' && owner !== 'World of Warcraft') continue;
+    windows.push({ pid: wpid, owner, layer: v('kCGWindowLayer'), onscreen: !!v('kCGWindowIsOnscreen'), bounds: ObjC.deepUnwrap(w.objectForKey('kCGWindowBounds')) });
+  }
+  const screens = $.NSScreen.screens.js.map((s) => ({ x: s.frame.origin.x, y: s.frame.origin.y, width: s.frame.size.width, height: s.frame.size.height, scale: s.backingScaleFactor }));
+  return JSON.stringify({ windows, screens });
+}`;
+
+// The game window from MAC_WINDOWS_JXA's output: its bounds, the scale of the screen
+// it's on, and whether it fills that screen (no title bar above the game).
+export function pickMacWindow(info, pid) {
+  const normal = (info?.windows || []).filter((w) => w.layer === 0 && w.bounds?.Width > 100 && w.bounds?.Height > 100);
+  const mine = normal.filter((w) => pid && w.pid === pid);
+  const pool = mine.length ? mine : normal;
+  const area = (w) => w.bounds.Width * w.bounds.Height;
+  const win = pool.sort((a, b) => Number(b.onscreen) - Number(a.onscreen) || area(b) - area(a))[0];
+  if (!win) return { found: false };
+  const b = win.bounds;
+  const primary = info.screens?.[0];
+  // NSScreen frames are bottom-left based; flip them into window-list coordinates.
+  const screens = (info.screens || []).map((s) => ({ ...s, y: primary ? primary.height - (s.y + s.height) : s.y }));
+  const cx = b.X + b.Width / 2;
+  const cy = b.Y + b.Height / 2;
+  const screen = screens.find((s) => cx >= s.x && cx < s.x + s.width && cy >= s.y && cy < s.y + s.height) || screens[0];
+  const fullscreen = !!screen && Math.abs(b.X - screen.x) < 1 && Math.abs(b.Y - screen.y) < 1 && Math.abs(b.Width - screen.width) < 1 && Math.abs(b.Height - screen.height) < 1;
+  return { found: true, visible: win.onscreen, x: b.X, y: b.Y, width: b.Width, height: b.Height, scale: screen?.scale || 1, fullscreen };
+}
+
+// A windowed game has a title bar between the window's top and the strip. Search this
+// many extra points down rather than guessing its exact height.
+const MAC_TITLE_SLACK = 40;
+
+export const SCREEN_PERMISSION_HELP =
+  `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge.`;
+
+// ---------------------------------------------------------------------------
 
 export class StripCapture {
   constructor({ log = () => {}, backend = 'auto', region = null } = {}) {
@@ -120,10 +176,14 @@ export class StripCapture {
     this.lastSeenAt = 0;
     this.stats = { captures: 0, decoded: 0, rejected: 0, notVisible: 0 };
     this.lastImage = null;
+    this.macCache = null; // { pid, at, win }: the window list costs an osascript run
+    this.macAsked = false;
+    this.tmpDir = null;
   }
 
   resolveBackend() {
     if (this.backend !== 'auto') return this.backend;
+    if (process.platform === 'darwin') return which('screencapture') ? 'macos' : 'none';
     if (process.env.WAYLAND_DISPLAY || hyprSocket()) {
       if (hyprSocket() && which('grim')) return 'hyprland';
       if (which('grim')) return 'grim';
@@ -139,11 +199,89 @@ export class StripCapture {
     return { width: CELLS_PER_ROW * cell + 32, height: MAX_ROWS * cell + 32 };
   }
 
+  async macWindow(pid) {
+    const c = this.macCache;
+    if (c && c.pid === pid && Date.now() - c.at < 2000) return c.win;
+    const out = await run('osascript', ['-l', 'JavaScript', '-e', MAC_WINDOWS_JXA, String(pid || 0)], { timeout: 4000 });
+    const win = pickMacWindow(JSON.parse(out.toString('utf8')), pid);
+    this.macCache = { pid, at: Date.now(), win };
+    return win;
+  }
+
+  // Ask macOS once for Screen Recording permission. The system shows its prompt (or
+  // lists the bridge, switched off, in Settings) for the process that asked.
+  requestScreenAccess() {
+    if (this.macAsked) return;
+    this.macAsked = true;
+    const js = "ObjC.import('CoreGraphics'); ObjC.bindFunction('CGRequestScreenCaptureAccess', ['bool', []]); $.CGRequestScreenCaptureAccess()";
+    run('osascript', ['-l', 'JavaScript', '-e', js], { timeout: 60000 }).catch(() => {});
+  }
+
+  // On macOS, ask for Screen Recording up front (at bridge start) so the prompt shows
+  // before the game does. Elsewhere there's nothing to ask.
+  async prepare() {
+    if (this.resolveBackend() !== 'macos' || this.manualRegion) return;
+    try {
+      if (!(await this.macAllowed())) this.requestScreenAccess();
+    } catch {}
+  }
+
+  async macAllowed() {
+    const js = "ObjC.import('CoreGraphics'); ObjC.bindFunction('CGPreflightScreenCaptureAccess', ['bool', []]); $.CGPreflightScreenCaptureAccess()";
+    return (await run('osascript', ['-l', 'JavaScript', '-e', js])).toString().trim() === 'true';
+  }
+
+  tmpFile(name) {
+    if (!this.tmpDir || !fs.existsSync(this.tmpDir)) this.tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't3code-wow-'));
+    return path.join(this.tmpDir, name);
+  }
+
+  // `screencapture` writes a file; read it back and remove it. Rect is in points.
+  async macCapture(rect, type, name) {
+    const file = this.tmpFile(name);
+    try {
+      await run('screencapture', ['-x', '-R', rect.map(Math.round).join(','), '-t', type, file], { timeout: 8000 });
+      return fs.readFileSync(file);
+    } catch (err) {
+      if (/could not create image/i.test(`${err.stderr || ''}${err.message}`)) {
+        this.requestScreenAccess();
+        throw new Error(SCREEN_PERMISSION_HELP);
+      }
+      throw err;
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  }
+
   async grab(wowPid) {
     const backend = this.resolveBackend();
     this.stats.captures++;
-    if (backend === 'none') throw new Error('no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11)');
+    if (backend === 'none') {
+      throw new Error(process.platform === 'darwin' ? 'no capture backend: /usr/sbin/screencapture is missing' : 'no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11)');
+    }
     const px = StripCapture.stripPixels(4);
+    if (backend === 'macos') {
+      let region = this.manualRegion;
+      let scale = 1;
+      let searchY = 0;
+      if (!region) {
+        const win = await this.macWindow(wowPid);
+        if (!win?.found) return { status: 'no-window' };
+        if (!win.visible) {
+          this.stats.notVisible++;
+          return { status: 'hidden' };
+        }
+        scale = win.scale;
+        region = { x: win.x, y: win.y };
+        if (!win.fullscreen) searchY = MAC_TITLE_SLACK;
+      }
+      const w = Math.ceil(px.width / scale);
+      const h = Math.ceil(px.height / scale) + searchY;
+      const buf = await this.macCapture([region.x, region.y, w, h], 'bmp', 'strip.bmp');
+      const image = parseBMP(buf);
+      // screencapture works in physical pixels: scale the slack to match the image.
+      return { status: 'ok', image, searchY: Math.ceil(searchY * (image.width / w)) };
+    }
     if (backend === 'hyprland' || backend === 'grim') {
       let region = this.manualRegion;
       let scale = 1;
@@ -180,6 +318,26 @@ export class StripCapture {
   async screenshot(wowPid) {
     const backend = this.resolveBackend();
     const name = `wow-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
+    if (backend === 'macos') {
+      const win = await this.macWindow(wowPid);
+      const rect = win?.found ? [win.x, win.y, win.width, win.height] : null;
+      if (!rect) throw new Error('the game window is not on screen');
+      // Retina captures come back at twice the size; keep them at the logical size.
+      const file = this.tmpFile(name);
+      const data = await this.macCapture(rect, 'jpg', 'shot.jpg');
+      if (win.scale > 1) {
+        fs.writeFileSync(file, data);
+        try {
+          await run('sips', ['-Z', String(Math.round(Math.max(win.width, win.height))), file], { timeout: 8000 });
+          return { data: fs.readFileSync(file), name, mime: 'image/jpeg' };
+        } catch {
+          return { data, name, mime: 'image/jpeg' };
+        } finally {
+          fs.rmSync(file, { force: true });
+        }
+      }
+      return { data, name, mime: 'image/jpeg' };
+    }
     if (backend === 'hyprland' || backend === 'grim') {
       const args = ['-t', 'jpeg', '-q', '85', '-s', '1'];
       if (backend === 'hyprland') {
@@ -207,7 +365,7 @@ export class StripCapture {
     }
     if (res.status !== 'ok') return res;
     this.lastImage = res.image;
-    const out = decodeImage(res.image, this.hint);
+    const out = decodeImage(res.image, this.hint, { searchY: res.searchY || 0 });
     if (!out) return { status: 'empty' };
     this.hint = out.geo;
     if (out.error) {

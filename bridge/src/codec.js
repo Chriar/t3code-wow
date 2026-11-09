@@ -122,10 +122,12 @@ function headerAt(img, geo) {
 
 // Find the strip. Tries the last known geometry first, then searches cell sizes and
 // small offsets (a window border or misaligned capture shifts the origin a little).
-export function locate(img, hint) {
+// `searchY` widens the vertical search, for captures that start above the game's
+// content (a macOS title bar).
+export function locate(img, hint, { searchY = 0 } = {}) {
   if (hint && headerAt(img, hint)) return hint;
   for (let cell = 2; cell <= 8; cell++) {
-    for (let oy = 0; oy <= cell * 3; oy++) {
+    for (let oy = 0; oy <= cell * 3 + searchY; oy++) {
       for (let ox = 0; ox <= cell * 3; ox++) {
         const geo = { ox, oy, cell };
         if (headerAt(img, geo)) return geo;
@@ -136,8 +138,8 @@ export function locate(img, hint) {
 }
 
 // Returns { version, seq, payload (Buffer), geo } or { error, geo } or null when no strip is visible.
-export function decodeImage(img, hint) {
-  const geo = locate(img, hint);
+export function decodeImage(img, hint, opts) {
+  const geo = locate(img, hint, opts);
   if (!geo) return null;
   const head = headerAt(img, geo);
   if (head.len > MAX_PAYLOAD) return { error: 'bad length', geo };
@@ -200,4 +202,45 @@ export function parsePPM(buf) {
   const height = Number(h);
   if (Number(max) !== 255) throw new Error('unsupported ppm maxval');
   return { width, height, data: buf.subarray(pos, pos + width * height * 3) };
+}
+
+// Parse an uncompressed 24- or 32-bit BMP (as written by macOS `screencapture -t bmp`)
+// into the same RGB image.
+export function parseBMP(buf) {
+  if (buf.length < 54 || buf[0] !== 0x42 || buf[1] !== 0x4d) throw new Error('not a bmp');
+  const dataOffset = buf.readUInt32LE(10);
+  const width = buf.readInt32LE(18);
+  const rawHeight = buf.readInt32LE(22);
+  const bpp = buf.readUInt16LE(28);
+  const compression = buf.readUInt32LE(30);
+  if (bpp !== 24 && bpp !== 32) throw new Error(`unsupported bmp depth ${bpp}`);
+  // 0 = BI_RGB, 3 = BI_BITFIELDS (masks after the 40-byte header), 6 = BI_ALPHABITFIELDS.
+  let masks = bpp === 32 ? [0x00ff0000, 0x0000ff00, 0x000000ff] : null;
+  if (compression === 3 || compression === 6) {
+    if (bpp !== 32) throw new Error('unsupported bmp bitfields');
+    masks = [buf.readUInt32LE(54), buf.readUInt32LE(58), buf.readUInt32LE(62)];
+  } else if (compression !== 0) {
+    throw new Error(`unsupported bmp compression ${compression}`);
+  }
+  const height = Math.abs(rawHeight);
+  const topDown = rawHeight < 0;
+  const stride = Math.ceil((width * bpp) / 32) * 4;
+  const shifts = masks?.map((m) => (m ? 31 - Math.clz32(m & -m) : 0));
+  const data = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    const row = dataOffset + (topDown ? y : height - 1 - y) * stride;
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 3;
+      if (bpp === 24) {
+        const p = row + x * 3;
+        data[o] = buf[p + 2];
+        data[o + 1] = buf[p + 1];
+        data[o + 2] = buf[p];
+      } else {
+        const v = buf.readUInt32LE(row + x * 4);
+        for (let c = 0; c < 3; c++) data[o + c] = ((v & masks[c]) >>> shifts[c]) & 0xff;
+      }
+    }
+  }
+  return { width, height, data };
 }

@@ -277,6 +277,7 @@ export class Bridge {
     this.statusTimer = setInterval(() => this.writeStatus(), 3000);
     // Pick up new Omarchy usage records (the shell's Agents panel refreshes them).
     this.usageTimer = setInterval(() => this.omarchyUsage.refresh(this.usageInstances()), 60000);
+    this.capture.prepare();
     this.captureLoop();
   }
 
