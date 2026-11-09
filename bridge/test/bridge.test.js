@@ -154,6 +154,8 @@ test('the model list is only sent while the addon reports a different one', () =
   assert.equal(b.buildSnapshot().models, undefined, 'the addon has this list');
   b.t3.local.client.config.providers[0].models.push({ slug: 'c', name: 'C' });
   assert.ok(b.buildSnapshot().models, 'a changed list goes out again');
+  b.t3.local.client.config.providers[0].enabled = false;
+  assert.deepEqual(b.buildSnapshot().models.g, [], 'switching off the last provider clears the list');
   b.stop();
 });
 

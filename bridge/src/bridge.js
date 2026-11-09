@@ -840,7 +840,7 @@ export class Bridge {
       .modelGroups()
       .filter((g) => g.choices.length)
       .map((g) => ({ e: g.code, m: g.choices.map((c) => ({ i: c.instanceId, s: c.model, l: escapeWow(`${c.name} · ${c.provider}`) })) }));
-    if (!groups.length) return undefined;
+    // An empty list still gets a hash, so the addon drops models that are gone.
     return { h: createHash('sha1').update(JSON.stringify(groups)).digest('hex').slice(0, 8), g: groups };
   }
 
