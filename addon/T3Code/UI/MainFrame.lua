@@ -194,7 +194,6 @@ function M:CreateThreadsPage(page)
 	local box = CreateFrame("Frame", nil, composer, "T3CodeComposerTemplate")
 	box:SetPoint("TOPLEFT", 8, -6)
 	box:SetPoint("BOTTOMRIGHT", -8, 18)
-	box:SetDefaultText("Message the agent  (Shift+Enter for a new line)")
 	box:RegisterCallback("OnEnterPressed", function()
 		if IsShiftKeyDown() then
 			box:Insert("\n")
@@ -206,6 +205,7 @@ function M:CreateThreadsPage(page)
 	box:RegisterCallback("OnEscapePressed", function() box:ClearFocus() end, M)
 	right.Composer = box
 	self.composer = box
+	self:SetPlaceholder("Message the agent  (Shift+Enter for a new line)")
 
 	local counter = UI.Text(composer, "GameFontDisableSmall", "RIGHT")
 	counter:SetPoint("BOTTOMRIGHT", -8, 5)
@@ -574,6 +574,17 @@ function M:UpdateRefreshButton()
 	f.RefreshSlots:SetShown(low and not InCombatLockdown())
 end
 
+-- Blizzard's edit box keeps a shown placeholder as the box's text, and only swaps
+-- it while the box is empty. Changed in place, the old placeholder stayed behind as
+-- text that focusing no longer cleared, so typing went after it. Set it again on an
+-- empty box so the new one replaces the old.
+function M:SetPlaceholder(text)
+	if self.placeholder == text then return end
+	self.placeholder = text
+	self.composer:SetDefaultText(text)
+	if self.composer:GetInputText() == "" then self.composer:SetText("") end
+end
+
 function M:Refresh()
 	local f = self.frame
 	if not f or not f:IsShown() then return end
@@ -594,7 +605,7 @@ function M:Refresh()
 		header.Archive:Hide()
 		header.Project:Show()
 		self:SetupProjectDropdown()
-		self.composer:SetDefaultText("Describe what the agent should do  (Shift+Enter for a new line)")
+		self:SetPlaceholder("Describe what the agent should do  (Shift+Enter for a new line)")
 		right.Hint:SetText(self:ShotHint() or "")
 		f.Bar.Send:SetText("Start")
 	else
@@ -613,7 +624,7 @@ function M:Refresh()
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
 			header.Archive:SetShown(t.s == "settled")
 			header.Text:SetPoint("RIGHT", t.s == "settled" and -200 or -110, 0)
-			self.composer:SetDefaultText(t.s == "working" and "Queue a follow-up  (Shift+Enter for a new line)" or "Message the agent  (Shift+Enter for a new line)")
+			self:SetPlaceholder(t.s == "working" and "Queue a follow-up  (Shift+Enter for a new line)" or "Message the agent  (Shift+Enter for a new line)")
 		else
 			f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
 			header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))
