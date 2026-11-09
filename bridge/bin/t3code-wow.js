@@ -512,7 +512,7 @@ function help() {
                      Install the addon, its live-update slots and the bridge service
   t3code-wow status [--log] [--json]
                      Show what the bridge sees
-  t3code-wow sync        Copy updated addon code into the game (then /reload)
+  t3code-wow sync        Re-copy the installed addon into the game (to update, rerun the install command)
   t3code-wow run [--verbose]
                      Run the bridge in the foreground (the service runs this)
   t3code-wow env [list]  Other T3 Code machines shown in game (T3 Connect / Tailscale)

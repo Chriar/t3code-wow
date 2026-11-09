@@ -48,7 +48,7 @@ When to add a test: only for logic that could regress unnoticed (parsing, the be
 
 ## Verifying UI changes
 
-Tests don't show what the player sees. Anything visible must be checked in game: `t3code-wow sync`, `/reload`, then look. Use the controller too when navigation is involved. Attach screenshots or a short recording to the PR, as CONTRIBUTING.md describes. `t3code-wow probe` captures the strip corner when the link itself is in question.
+Tests don't show what the player sees. Anything visible must be checked in game: `./install.sh` from the checkout, `/reload`, then look. (`t3code-wow sync` re-copies the installed addon, not your edits.) Use the controller too when navigation is involved. Attach screenshots or a short recording to the PR, as CONTRIBUTING.md describes. `t3code-wow probe` captures the strip corner when the link itself is in question.
 
 ## Style
 

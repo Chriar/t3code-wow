@@ -58,7 +58,6 @@ This removes the addon and its update folders, its settings in the game, the bri
 t3code-wow status         # what the bridge sees: T3 Code, the game, the screen link, the addon
 t3code-wow status --log   # the same, with recent log lines
 t3code-wow env            # other machines shown in game (add <host> / remove <name>)
-t3code-wow sync           # copy changed addon code into the game, then /reload
 t3code-wow uninstall      # remove everything (see above)
 ```
 
