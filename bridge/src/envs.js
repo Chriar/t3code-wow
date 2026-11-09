@@ -35,7 +35,7 @@ export async function discoverTailscale(host) {
   try {
     // The macOS app keeps its CLI inside the bundle unless you add it to PATH.
     const mac = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
-    const cli = process.platform === 'darwin' && fs.existsSync(mac) ? mac : 'tailscale';
+    const cli = fs.existsSync(mac) ? mac : 'tailscale';
     status = JSON.parse(await run(cli, ['status', '--json'], 10000));
   } catch {
     return [];

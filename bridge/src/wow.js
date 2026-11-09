@@ -70,16 +70,12 @@ function battlenetWowDirs(root) {
   return dirs;
 }
 
-function isForever(dir) {
-  return ['Wow.exe', 'World of Warcraft.app', 'Interface'].some((f) => fs.existsSync(path.join(dir, f)));
-}
-
 // Sort WoW folders into Forever installs and WoW installs without Forever.
 function classify(wowDirs, forever, wowOnly) {
   for (const wow of wowDirs) {
     if (!fs.existsSync(wow)) continue;
     const dir = path.join(wow, FLAVOR);
-    if (isForever(dir)) {
+    if (['Wow.exe', 'World of Warcraft.app', 'Interface'].some((f) => fs.existsSync(path.join(dir, f)))) {
       if (!forever.includes(dir)) forever.push(dir);
     } else if (!wowOnly.includes(wow)) {
       wowOnly.push(wow);
@@ -109,24 +105,22 @@ function macInstalls(system = '/') {
   const home = os.homedir();
   const sys = (p) => path.join(system, p);
   const dirs = [];
-  const add = (d) => d && !dirs.includes(d) && dirs.push(d);
   const shared = sys('Users/Shared/Battle.net');
   try {
     const db = fs.readFileSync(path.join(shared, 'Agent/product.db'), 'latin1');
-    for (const m of db.matchAll(/\/[^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) add(path.join(system, m[0]));
+    for (const m of db.matchAll(/\/[^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) dirs.push(sys(Buffer.from(m[0], 'latin1').toString('utf8')));
   } catch {}
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(home, 'Library/Application Support/Battle.net/Battle.net.config'), 'utf8'));
-    const base = cfg?.Client?.Install?.DefaultInstallPath;
-    if (base) add(path.join(system, base, 'World of Warcraft'));
+    const base = cfg.Client.Install.DefaultInstallPath;
+    if (base) dirs.push(path.join(system, base, 'World of Warcraft'));
   } catch {}
-  add(sys('Applications/World of Warcraft'));
-  add(path.join(home, 'Applications/World of Warcraft'));
+  dirs.push(sys('Applications/World of Warcraft'), path.join(home, 'Applications/World of Warcraft'));
   const forever = [];
   const wowOnly = [];
   classify(dirs, forever, wowOnly);
   const battlenet = [sys('Applications/Battle.net.app'), path.join(home, 'Applications/Battle.net.app'), shared].filter((p) => fs.existsSync(p));
-  return { forever, wowOnly, prefixes: battlenet.slice(0, 1) };
+  return { forever, wowOnly, prefixes: battlenet };
 }
 
 // { forever: [...WoW: Forever folders], wowOnly: [...WoW installs without Forever], prefixes: [...where Battle.net is] }
@@ -175,17 +169,19 @@ export function findWowProcess() {
 }
 
 // `ps -axww -o pid=,lstart=,comm=` lines: "  123 Mon Nov  9 09:27:45 2026     /path/to/exe".
+// The start time is in UTC (findMacProcess runs ps with TZ=UTC), so a change of time
+// zone while the game runs doesn't look like a new client.
 export function parseMacProcesses(text) {
   for (const line of text.split('\n')) {
     const m = /^\s*(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line);
     if (!m || !/\/_forever_\/[^/]+\.app\/Contents\/MacOS\//.test(m[3])) continue;
-    return { pid: Number(m[1]), startTicks: Date.parse(m[2]) || 0 };
+    return { pid: Number(m[1]), startTicks: Date.parse(`${m[2]} GMT`) };
   }
   return null;
 }
 
 function findMacProcess() {
-  const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C' } });
+  const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
   return r.status === 0 ? parseMacProcesses(r.stdout) : null;
 }
 

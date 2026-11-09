@@ -100,11 +100,20 @@ function quiet(cmd, args, { warn = true } = {}) {
   return r.status === 0;
 }
 
+// On macOS, the launch agent runs the `node` found on PATH, such as Homebrew's
+// /opt/homebrew/bin/node, rather than the versioned folder that link points to.
+// `brew upgrade node` deletes the old versioned folder, and the agent would then fail
+// to start at the next login.
 function bridgeCommand() {
-  return [process.execPath, path.join(BRIDGE_ROOT, 'bin', 't3code-wow.js'), 'run'];
+  const linked = (process.env.PATH || '').split(':').map((dir) => path.join(dir, 'node')).find((p) => {
+    try {
+      return fs.realpathSync(p) === process.execPath;
+    } catch {
+      return false;
+    }
+  });
+  return [(MAC && linked) || process.execPath, path.join(BRIDGE_ROOT, 'bin', 't3code-wow.js'), 'run'];
 }
-
-const xmlEscape = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const systemd = {
   name: 't3code-wow.service',
@@ -129,7 +138,7 @@ const systemd = {
     ].join('\n'));
     quiet('systemctl', ['--user', 'daemon-reload']);
     quiet('systemctl', ['--user', 'enable', this.name]);
-    quiet('systemctl', ['--user', 'restart', this.name]);
+    return quiet('systemctl', ['--user', 'restart', this.name]);
   },
   restart() {
     quiet('systemctl', ['--user', 'restart', this.name]);
@@ -149,7 +158,7 @@ const launchd = {
   install() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    const str = (v) => `<string>${xmlEscape(v)}</string>`;
+    const str = (v) => `<string>${String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</string>`;
     fs.writeFileSync(this.file, [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -170,11 +179,10 @@ const launchd = {
     ].join('\n'));
     // Reload so a changed plist (a new node path, say) takes effect.
     quiet('launchctl', ['bootout', `${this.target()}/${this.name}`], { warn: false });
-    if (!quiet('launchctl', ['bootstrap', this.target(), this.file], { warn: false })) {
-      // bootout can still be finishing ("Bootstrap failed: 5"); only the retry's error is worth showing.
-      spawnSync('sleep', ['1']);
-      quiet('launchctl', ['bootstrap', this.target(), this.file]);
-    }
+    if (quiet('launchctl', ['bootstrap', this.target(), this.file], { warn: false })) return true;
+    // bootout can still be finishing ("Bootstrap failed: 5"); only the retry's error is worth showing.
+    spawnSync('sleep', ['1']);
+    return quiet('launchctl', ['bootstrap', this.target(), this.file]);
   },
   restart() {
     quiet('launchctl', ['kickstart', '-k', `${this.target()}/${this.name}`]);
@@ -240,12 +248,13 @@ async function cmdInstall(args) {
   console.log(`${C.g('✓')} T3 Code session ready ${C.d('(scoped to reading and running threads; revoke with `t3 auth session list`)')}`);
 
   if (!args['no-service']) {
-    service.install();
-    console.log(`${C.g('✓')} Bridge running as the ${service.name} ${service.kind}`);
-    if (MAC) {
-      console.log(`${C.y('!')} The bridge reads the game's pixels, so macOS asks for Screen Recording permission the first time.`);
-      console.log(C.d(`  If it doesn't ask, or the link stays down: System Settings > Privacy & Security > Screen & System Audio Recording,\n  turn on ${path.basename(process.execPath)} (${process.execPath}).`));
+    if (!service.install()) {
+      console.log(C.r(`✗ The bridge's ${service.kind} didn't start (the error is above). Fix that, then run \`t3code-wow install\` again.`));
+      process.exitCode = 1;
+      return;
     }
+    console.log(`${C.g('✓')} Bridge running as the ${service.name} ${service.kind}`);
+    if (MAC) console.log(`${C.y('!')} The bridge reads the game's pixels, so macOS asks for Screen Recording permission the first time.`);
   }
 
   console.log('');
@@ -289,12 +298,12 @@ async function firstLaunch({ restart, running, waiting, since }) {
         connected = st;
         break;
       }
-      const blocked = MAC && st?.capture?.state === 'error' && st.capture.lastError === SCREEN_PERMISSION_HELP;
+      const blocked = st?.capture?.state === 'error' && st.capture.lastError === SCREEN_PERMISSION_HELP;
       const msg = blocked
         ? 'Waiting for Screen Recording permission (see above)… (Enter to skip)'
         : st?.wow ? 'World of Warcraft is running. Waiting for you to log in… (Enter to skip)' : 'Waiting for World of Warcraft to start… (Enter to skip)';
-      if (blocked && !shown.startsWith('Waiting for Screen')) process.stdout.write(`\r\x1b[2K${C.y(SCREEN_PERMISSION_HELP)}\n`);
       if (msg !== shown) {
+        if (blocked) process.stdout.write(`\r\x1b[2K${C.y(SCREEN_PERMISSION_HELP)}\n`);
         process.stdout.write(`\r\x1b[2K${C.d(msg)}`);
         shown = msg;
       }
@@ -396,7 +405,7 @@ async function cmdProbe() {
     execFileSync('magick', [out, out.replace(/\.ppm$/, '.png')]);
     png = out.replace(/\.ppm$/, '.png');
   } catch {}
-  const dec = decodeImage(img);
+  const dec = decodeImage(img, null, { searchY: res.searchY });
   console.log(`captured ${img.width}x${img.height} -> ${png}`);
   if (!dec) console.log('no strip visible (open the T3 window in game, or send something)');
   else if (dec.error) console.log(`strip found but unreadable: ${dec.error} (cell ${dec.geo.cell}px at ${dec.geo.ox},${dec.geo.oy})`);
