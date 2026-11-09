@@ -279,6 +279,22 @@ check(f._scripts.OnGamePadStick(f, "Left", 0, -1) == false, "left stick consumed
 check(down(f, "PADFORWARD") == false and f._shown == false and not ns.Gamepad.capturing, "Start closes the window and gives the controller back")
 ns.Main:Open()
 check(ns.Gamepad.capturing, "reopened window takes the controller again")
+-- The model picker sits on the header row: D-pad to it, A opens its list, B closes it.
+do
+	local prevView = ns.viewId
+	ns.Main:StartNewThread()
+	ns.Gamepad:Highlight(hdr.Project)
+	down(f, "PADDRIGHT")
+	check(ns.Gamepad.selected == hdr.Model, "Right from the project goes to the model picker")
+	down(f, "PAD1")
+	local l = ns.UI.ListOpen()
+	check(l ~= nil and l.owner == hdr.Model, "A opens the model list")
+	down(f, "PAD2")
+	check(ns.UI.ListOpen() == nil and f._shown, "B closes the model list, not the window")
+	down(f, "PADDLEFT")
+	check(ns.Gamepad.selected == hdr.Project, "Left goes back to the project")
+	ns.Main:SelectThread(prevView)
+end
 check(down(f, "PADRSHOULDER") == false and ns.Main.page == "usage", "RB switched to usage")
 down(f, "PADLSHOULDER")
 check(ns.Main.page == "threads", "LB switched back")
