@@ -74,7 +74,7 @@ export class Voice {
     if (!text) return false;
     const engine = this.ttsEngine();
     if (!engine) {
-      this.log(`speak: no text-to-speech engine found (${process.platform === 'darwin' ? '/usr/bin/say is missing' : 'install speech-dispatcher or espeak-ng'}, or set tts.command)`);
+      this.log('speak: no text-to-speech engine found (install speech-dispatcher or espeak-ng, or set tts.command)');
       return false;
     }
     this.hush();

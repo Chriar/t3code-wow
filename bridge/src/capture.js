@@ -178,7 +178,7 @@ export class StripCapture {
 
   resolveBackend() {
     if (this.backend !== 'auto') return this.backend;
-    if (process.platform === 'darwin') return which('screencapture') ? 'macos' : 'none';
+    if (process.platform === 'darwin') return 'macos';
     if (process.env.WAYLAND_DISPLAY || hyprSocket()) {
       if (hyprSocket() && which('grim')) return 'hyprland';
       if (which('grim')) return 'grim';
@@ -244,9 +244,7 @@ export class StripCapture {
   async grab(wowPid) {
     const backend = this.resolveBackend();
     this.stats.captures++;
-    if (backend === 'none') {
-      throw new Error(process.platform === 'darwin' ? 'no capture backend: /usr/sbin/screencapture is missing' : 'no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11)');
-    }
+    if (backend === 'none') throw new Error('no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11)');
     const px = StripCapture.stripPixels(4);
     if (backend === 'macos') {
       let region = this.manualRegion;
