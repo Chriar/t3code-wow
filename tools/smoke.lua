@@ -94,6 +94,16 @@ check(ns.Main.mode == "new" and ns.Main.newProject ~= nil, "new thread mode with
 local hdr = ns.Main.frame.Pages.threads.Right.Header
 check(ns.Transport:Payload():find(ns.Store.modelsHash, 1, true) ~= nil and ns.Store.modelsHash ~= "", "hello reports the model list it has: " .. ns.Store.modelsHash)
 check(hdr.Model:IsShown() and #hdr.Model.options >= 1, "model picker shown for a new thread: " .. #hdr.Model.options .. " models")
+do
+	local seq = ns.Transport.stripSeq
+	ns.Transport:Apply({ gen = data.gen + 1, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, models = { h = "00000000", g = {} } })
+	check(ns.Transport.stripSeq ~= seq and ns.Transport:Payload():find("00000000", 1, true) ~= nil, "a new model list is announced straight away")
+	check(ns.Store:ModelOptions("", nil) == nil, "an empty list clears the models")
+	data.gen = data.gen + 1
+	ns.Transport:Apply({ gen = data.gen + 1, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, models = data.models })
+	data.gen = data.gen + 1
+	check(hdr.Model:IsShown(), "the list comes back")
+end
 local pick = hdr.Model.options[#hdr.Model.options]
 ns.Main:PickModel(pick.value)
 check(ns.db.models[ns.Main.newProject] == pick.value and ns.Main:NewThreadModel() == pick.value, "picked model remembered for the project: " .. pick.label)

@@ -250,7 +250,10 @@ function T:Apply(data, bootstrap)
 		if fresh then db.gen = data.gen end
 		self.lastData = GetTime()
 		self.bridgeNow = data.now
+		local hadModels = ns.Store.modelsHash
 		ns.Store:Apply(data)
+		-- Tell the bridge we have the new list, or it keeps sending it with every update.
+		if ns.Store.modelsHash ~= hadModels then self:Touch() end
 	end
 	ns:Fire("LinkChanged")
 	return fresh
