@@ -115,8 +115,6 @@ function bridgeCommand() {
   return [(MAC && linked) || process.execPath, path.join(BRIDGE_ROOT, 'bin', 't3code-wow.js'), 'run'];
 }
 
-const xmlEscape = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 const systemd = {
   name: 't3code-wow.service',
   file: path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd/user', 't3code-wow.service'),
@@ -160,7 +158,7 @@ const launchd = {
   install() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    const str = (v) => `<string>${xmlEscape(v)}</string>`;
+    const str = (v) => `<string>${String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</string>`;
     fs.writeFileSync(this.file, [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
