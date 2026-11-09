@@ -123,6 +123,7 @@ do
 	ns.Transport:Apply({ gen = data.gen + 1, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, models = { h = "00000000", g = {} } })
 	check(ns.Transport.stripSeq ~= seq and ns.Transport:Payload():find("00000000", 1, true) ~= nil, "a new model list is announced straight away")
 	check(ns.Store:ModelOptions("", nil) == nil, "an empty list clears the models")
+	check(not hdr.Model:IsShown() and not hdr.Effort:IsShown(), "no models: neither picker is left on screen")
 	data.gen = data.gen + 1
 	ns.Transport:Apply({ gen = data.gen + 1, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, models = data.models })
 	data.gen = data.gen + 1
@@ -140,7 +141,9 @@ local level
 if hdr.Effort:IsShown() then
 	local levels, default = ns.Store:EffortOptions("", pick.value)
 	for _, o in ipairs(levels) do if o.value ~= default then level = o.value end end
-	check(ns.Main:ChosenNewEffort() == nil and hdr.Effort.value == (ns.Store.projectsById[ns.Main.newProject].dm == pick.value and ns.Store.projectsById[ns.Main.newProject].de or default), "no level picked: the picker shows the model's own")
+	local proj = ns.Store.projectsById[ns.Main.newProject]
+	local inherited = (proj.dm == pick.value and proj.de) or ns.Store:LastEffort("", pick.value) or default
+	check(ns.Main:ChosenNewEffort() == nil and hdr.Effort.value == inherited, "no level picked: the picker shows the level the thread would get: " .. inherited)
 	ns.Main:PickEffort(level)
 	check(ns.db.efforts[ns.Main.newProject] == level and hdr.Effort.value == level, "picked level remembered for the project: " .. level)
 else

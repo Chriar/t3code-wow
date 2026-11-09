@@ -626,6 +626,7 @@ function M:Refresh()
 		self:SetupProjectDropdown()
 		local withModel = self:SetupModelDropdown()
 		local withEffort = withModel and self:SetupEffortDropdown()
+		if not withEffort then header.Effort:Hide() end
 		header.Model.tipBody = "The model the new thread starts on. It's remembered for this project."
 		header.Effort.tipBody = "How hard the model reasons on the new thread. It's remembered for this project."
 		header.Effort:ClearAllPoints()
@@ -662,6 +663,7 @@ function M:Refresh()
 			header.Archive:SetShown(t.s == "settled")
 			local withModel = self:SetupModelDropdown()
 			local withEffort = withModel and self:SetupEffortDropdown()
+			if not withEffort then header.Effort:Hide() end
 			header.Model.tipBody = "The model for this thread. A change applies from the next reply on."
 			header.Effort.tipBody = "How hard the model reasons on this thread. A change applies from the next reply on."
 			local anchor = t.s == "settled" and header.Archive or header.Action
@@ -782,10 +784,20 @@ function M:SetupEffortDropdown()
 		env, model = ns.Store.EnvOf(self.newProject), self:NewThreadModel()
 		current = self:ChosenNewEffort()
 		local p = ns.Store.projectsById[self.newProject or ""]
-		if not current and p and p.dm == model then current = p.de end
+		if not current then
+			-- What the bridge would carry over: T3's own pick when it's this model,
+			-- else the level last used with the model.
+			if p and p.dm == model then current = p.de else current = ns.Store:LastEffort(env, model) end
+		end
 	else
 		local t = ns.Store:Thread(ns.viewId)
-		if t then env, model, current = ns.Store.EnvOf(t.id), self:ThreadModel(t), self:ThreadEffort(t) end
+		if t then
+			env, model, current = ns.Store.EnvOf(t.id), self:ThreadModel(t), self:ThreadEffort(t)
+			-- Just switched to another model: it brings the level last used with it.
+			if model ~= ns.Store.ModelKey(t.mi, t.m) and not (self.pendingEffort and self.pendingEffort.thread == t.id) then
+				current = ns.Store:LastEffort(env, model)
+			end
+		end
 	end
 	local options, default = ns.Store:EffortOptions(env, model)
 	if not options then

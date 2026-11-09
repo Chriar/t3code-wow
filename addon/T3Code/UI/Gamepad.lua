@@ -430,9 +430,12 @@ function G:Move(dirKey)
 		local size = box:GetDataProviderSize()
 		local step = d[2] > 0 and -1 or 1
 		local nextIndex = index and index + step
+		-- A dropdown's group headers aren't choices; the thread list's are.
+		local open = UI.ListOpen()
+		local headers = not (open and box == open.Box)
 		while nextIndex and nextIndex >= 1 and nextIndex <= size do
 			local ed = box:FindElementData(nextIndex)
-			if ed and (ed.thread or ed.header or ed.kind == "option" or ed.value ~= nil) then break end
+			if ed and (ed.thread or (ed.header and headers) or ed.kind == "option" or ed.value ~= nil) then break end
 			nextIndex = nextIndex + step
 		end
 		local frame = nextIndex and nextIndex >= 1 and nextIndex <= size and box:FindFrame(box:FindElementData(nextIndex))

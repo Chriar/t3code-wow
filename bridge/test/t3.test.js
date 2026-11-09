@@ -62,6 +62,9 @@ test('a picked model keeps the options last used with it', () => {
     { createdAt: '2026-11-05T00:00:00Z', modelSelection: { instanceId: 'codex', model: 'b', options: low } },
   ];
   assert.deepEqual(chosenModelSelection({ instanceId: 'codex', model: 'b' }, { providers, candidates: [auto], threads }).options, low);
+  // "Latest" is the latest active, the order the game lists threads in.
+  threads[0].latestRunStartedAt = '2026-11-08T00:00:00Z';
+  assert.deepEqual(chosenModelSelection({ instanceId: 'codex', model: 'b' }, { providers, candidates: [auto], threads }).options, high);
   // Never used: no options, so T3 applies the model's defaults.
   assert.deepEqual(chosenModelSelection({ instanceId: 'codex', model: 'b' }, { providers }), { instanceId: 'codex', model: 'b' });
   assert.throws(() => chosenModelSelection({ instanceId: 'off', model: 'z' }, { providers }), /switched off/);

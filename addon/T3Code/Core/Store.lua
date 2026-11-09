@@ -203,6 +203,20 @@ function Store:EffortOptions(env, key)
 	return options, levels.d
 end
 
+-- The level the latest active thread on machine `env` used with model `key`, which
+-- the bridge carries over when that model is picked without a level (nil: the
+-- model's own).
+function Store:LastEffort(env, key)
+	local best
+	for _, t in ipairs(self.data.threads) do
+		if Store.EnvOf(t.id) == (env or "") and Store.ModelKey(t.mi, t.m) == key
+			and (not best or (t.st or t.u or 0) > (best.st or best.u or 0)) then
+			best = t
+		end
+	end
+	return best and best.re
+end
+
 function Store.HasOption(options, value)
 	for _, o in ipairs(options or {}) do
 		if not o.header and o.value == value then return true end

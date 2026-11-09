@@ -127,9 +127,12 @@ export function chosenModelSelection({ instanceId, model }, { providers, candida
   const same = (sel) => sel?.instanceId === instanceId && sel?.model === model;
   let options = candidates.find(same)?.options;
   if (!options) {
+    // Latest by activity, the order the game sees threads in, so its picker shows
+    // the level this carries over.
+    const active = (t) => Date.parse(t.activityRunStartedAt || t.latestRunStartedAt || t.updatedAt || t.createdAt || 0);
     const latest = threads
       .filter((t) => !t.deletedAt && same(t.modelSelection))
-      .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))[0];
+      .sort((a, b) => active(b) - active(a))[0];
     options = latest?.modelSelection.options;
   }
   return options ? { instanceId, model, options } : { instanceId, model };
