@@ -44,6 +44,21 @@ export function isUnread(t) {
   return done > seen;
 }
 
+// The model for a new thread: the project's or T3's default, T3's fallback, or else
+// the model of the latest thread in the project, then anywhere. T3 leaves the defaults
+// empty until someone picks one, and its own composer reuses the last model instead.
+// Models whose provider is switched off are skipped.
+export function pickModelSelection({ project, settings = {}, threads = [], providers } = {}) {
+  const enabled = (sel) => sel?.model && (!providers || providers.some((p) => p.instanceId === sel.instanceId && p.enabled));
+  for (const sel of [project?.defaultModelSelection, settings.defaultModelSelection, settings.fallbackModelSelection]) {
+    if (enabled(sel)) return sel;
+  }
+  const latest = threads
+    .filter((t) => !t.deletedAt && enabled(t.modelSelection))
+    .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
+  return (latest.find((t) => project && t.projectId === project.id) || latest[0])?.modelSelection || null;
+}
+
 export class T3Client extends EventEmitter {
   constructor({ tokenProvider, log = () => {}, originProvider = null, label = 'local' }) {
     super();
@@ -319,9 +334,13 @@ export class T3Client extends EventEmitter {
   // opts: { title, runtimeMode ('full-access' | 'approval-required' | ...), interactionMode ('default' | 'plan') }
   launchThread(projectId, text, attachments = [], opts = {}) {
     const settings = this.config?.settings || {};
-    const project = this.projects.get(projectId);
-    const modelSelection = project?.defaultModelSelection || settings.defaultModelSelection;
-    if (!modelSelection) throw new Error('T3 has no default model configured');
+    const modelSelection = pickModelSelection({
+      project: this.projects.get(projectId),
+      settings,
+      threads: [...this.threads.values()],
+      providers: this.config?.providers,
+    });
+    if (!modelSelection) throw new Error('No model to start a thread with. Pick a default model in T3 Code settings, or start one thread there first.');
     const firstLine = text.split('\n')[0].trim();
     const title = firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine || 'New thread';
     return this.request('orchestration.launchThread', {
