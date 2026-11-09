@@ -1,4 +1,8 @@
 // Finding the WoW: Forever install and the running client.
+//
+// On Linux the game runs under Wine or Proton, so we look through Wine prefixes. On
+// macOS it runs natively, from /Applications by default.
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -66,30 +70,63 @@ function battlenetWowDirs(root) {
   return dirs;
 }
 
-// { forever: [...WoW: Forever folders], wowOnly: [...WoW installs without Forever], prefixes: [...prefixes with Battle.net] }
-export function findWowInstalls() {
+// Sort WoW folders into Forever installs and WoW installs without Forever.
+function classify(wowDirs, forever, wowOnly) {
+  for (const wow of wowDirs) {
+    if (!fs.existsSync(wow)) continue;
+    const dir = path.join(wow, FLAVOR);
+    if (['Wow.exe', 'World of Warcraft.app', 'Interface'].some((f) => fs.existsSync(path.join(dir, f)))) {
+      if (!forever.includes(dir)) forever.push(dir);
+    } else if (!wowOnly.includes(wow)) {
+      wowOnly.push(wow);
+    }
+  }
+}
+
+function linuxInstalls() {
   const forever = [];
   const wowOnly = [];
   const roots = candidateRoots();
   for (const root of roots) {
-    const wowDirs = [
+    classify([
       ...battlenetWowDirs(root),
       path.join(root, 'drive_c/Program Files (x86)/World of Warcraft'),
       path.join(root, 'drive_c/Program Files/World of Warcraft'),
-    ];
-    for (const wow of wowDirs) {
-      if (!fs.existsSync(wow)) continue;
-      const dir = path.join(wow, FLAVOR);
-      if (fs.existsSync(path.join(dir, 'Wow.exe')) || fs.existsSync(path.join(dir, 'Interface'))) {
-        if (!forever.includes(dir)) forever.push(dir);
-      } else if (!wowOnly.includes(wow)) {
-        wowOnly.push(wow);
-      }
-    }
+    ], forever, wowOnly);
   }
   const battlenet = roots.filter((r) => ['drive_c/ProgramData/Battle.net', 'drive_c/Program Files (x86)/Battle.net', 'drive_c/Program Files/Battle.net']
     .some((d) => fs.existsSync(path.join(r, d))));
-  return { forever, wowOnly: wowOnly.filter((w) => !forever.some((f) => f.startsWith(w + path.sep))), prefixes: battlenet };
+  return { forever, wowOnly, prefixes: battlenet };
+}
+
+// macOS: Battle.net records install paths as plain paths in product.db, and its
+// default install folder in Battle.net.config. `system` stands in for / in tests.
+function macInstalls(system = '/') {
+  const home = os.homedir();
+  const sys = (p) => path.join(system, p);
+  const dirs = [];
+  const shared = sys('Users/Shared/Battle.net');
+  try {
+    const db = fs.readFileSync(path.join(shared, 'Agent/product.db'), 'latin1');
+    for (const m of db.matchAll(/\/[^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) dirs.push(sys(Buffer.from(m[0], 'latin1').toString('utf8')));
+  } catch {}
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(home, 'Library/Application Support/Battle.net/Battle.net.config'), 'utf8'));
+    const base = cfg.Client.Install.DefaultInstallPath;
+    if (base) dirs.push(path.join(system, base, 'World of Warcraft'));
+  } catch {}
+  dirs.push(sys('Applications/World of Warcraft'), path.join(home, 'Applications/World of Warcraft'));
+  const forever = [];
+  const wowOnly = [];
+  classify(dirs, forever, wowOnly);
+  const battlenet = [sys('Applications/Battle.net.app'), path.join(home, 'Applications/Battle.net.app'), shared].filter((p) => fs.existsSync(p));
+  return { forever, wowOnly, prefixes: battlenet };
+}
+
+// { forever: [...WoW: Forever folders], wowOnly: [...WoW installs without Forever], prefixes: [...where Battle.net is] }
+export function findWowInstalls({ platform = process.platform, system } = {}) {
+  const { forever, wowOnly, prefixes } = platform === 'darwin' ? macInstalls(system) : linuxInstalls();
+  return { forever, wowOnly: wowOnly.filter((w) => !forever.some((f) => f.startsWith(w + path.sep))), prefixes };
 }
 
 export function findWowDirs() {
@@ -101,8 +138,10 @@ export function addonsDir(wowDir) {
 }
 
 // The running Forever client: { pid, startTicks } or null. startTicks (from
-// /proc/<pid>/stat) distinguishes a restarted client that happens to reuse a pid.
+// /proc/<pid>/stat, or the start time on macOS) distinguishes a restarted client
+// that happens to reuse a pid.
 export function findWowProcess() {
+  if (process.platform === 'darwin') return findMacProcess();
   let entries;
   try {
     entries = fs.readdirSync('/proc');
@@ -127,6 +166,23 @@ export function findWowProcess() {
     }
   }
   return null;
+}
+
+// `ps -axww -o pid=,lstart=,comm=` lines: "  123 Mon Nov  9 09:27:45 2026     /path/to/exe".
+// The start time is in UTC (findMacProcess runs ps with TZ=UTC), so a change of time
+// zone while the game runs doesn't look like a new client.
+export function parseMacProcesses(text) {
+  for (const line of text.split('\n')) {
+    const m = /^\s*(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line);
+    if (!m || !/\/_forever_\/[^/]+\.app\/Contents\/MacOS\//.test(m[3])) continue;
+    return { pid: Number(m[1]), startTicks: Date.parse(`${m[2]} GMT`) };
+  }
+  return null;
+}
+
+function findMacProcess() {
+  const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
+  return r.status === 0 ? parseMacProcesses(r.stdout) : null;
 }
 
 export function processKey(p) {

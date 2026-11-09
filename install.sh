@@ -18,7 +18,11 @@ dest="${XDG_DATA_HOME:-$HOME/.local/share}/t3code-wow"
 bin="$HOME/.local/bin"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "T3 Code for World of Warcraft needs Node.js 22 or newer: mise use -g node@lts (or pacman -S nodejs)." >&2
+  if [[ $(uname -s) == "Darwin" ]]; then
+    echo "T3 Code for World of Warcraft needs Node.js 22 or newer: brew install node (or mise use -g node@lts)." >&2
+  else
+    echo "T3 Code for World of Warcraft needs Node.js 22 or newer: mise use -g node@lts (or pacman -S nodejs)." >&2
+  fi
   exit 1
 fi
 major="$(node -p 'process.versions.node.split(".")[0]')"
@@ -61,6 +65,9 @@ mv "$dest/bridge.new" "$dest/bridge"
 mv "$dest/addon.new" "$dest/addon"
 chmod +x "$dest/bridge/bin/t3code-wow.js"
 ln -sf "$dest/bridge/bin/t3code-wow.js" "$bin/t3code-wow"
+if [[ ":$PATH:" != *":$bin:"* ]]; then
+  echo "Note: $bin isn't on your PATH, so run t3code-wow as $bin/t3code-wow (or add $bin to PATH in your shell profile)." >&2
+fi
 
 # When piped from curl, stdin is this script; give the guided setup the keyboard.
 if [[ ! -t 0 ]] && (: </dev/tty) 2>/dev/null; then

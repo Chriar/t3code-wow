@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { encodeFrame, decodeImage, renderCells, cellsToBytes, bytesToCells, MAX_PAYLOAD, parsePPM } from '../src/codec.js';
+import { encodeFrame, decodeImage, renderCells, cellsToBytes, bytesToCells, MAX_PAYLOAD, parsePPM, parseBMP } from '../src/codec.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const lua = ['lua5.1', 'luajit', 'lua'].find((bin) => {
@@ -72,4 +72,52 @@ test('parse ppm', () => {
   assert.equal(img.width, 2);
   assert.equal(img.data[3], 0);
   assert.equal(img.data[4], 255);
+});
+
+// A BMP like macOS screencapture writes: 32-bit with bitfields, or plain 24-bit, either row order.
+function toBMP(img, { bpp = 32, topDown = false } = {}) {
+  const stride = Math.ceil((img.width * bpp) / 32) * 4;
+  const header = bpp === 32 ? 54 + 12 : 54;
+  const b = Buffer.alloc(header + stride * img.height);
+  b.write('BM', 0, 'ascii');
+  b.writeUInt32LE(b.length, 2);
+  b.writeUInt32LE(header, 10);
+  b.writeUInt32LE(40, 14);
+  b.writeInt32LE(img.width, 18);
+  b.writeInt32LE(topDown ? -img.height : img.height, 22);
+  b.writeUInt16LE(1, 26);
+  b.writeUInt16LE(bpp, 28);
+  b.writeUInt32LE(bpp === 32 ? 3 : 0, 30);
+  if (bpp === 32) {
+    b.writeUInt32LE(0x00ff0000, 54);
+    b.writeUInt32LE(0x0000ff00, 58);
+    b.writeUInt32LE(0x000000ff, 62);
+  }
+  for (let y = 0; y < img.height; y++) {
+    const row = header + (topDown ? y : img.height - 1 - y) * stride;
+    for (let x = 0; x < img.width; x++) {
+      const [r, g, bl] = img.data.subarray((y * img.width + x) * 3, (y * img.width + x) * 3 + 3);
+      if (bpp === 32) b.writeUInt32LE(((0xff << 24) | (r << 16) | (g << 8) | bl) >>> 0, row + x * 4);
+      else b.set([bl, g, r], row + x * 3);
+    }
+  }
+  return b;
+}
+
+test('BMP captures decode like PPM ones', () => {
+  const cells = encodeFrame(7, 'hello from macOS');
+  const img = renderCells(cells, { cell: 6, ox: 1, oy: 2, width: 161 * 6 + 3, height: 30 });
+  for (const opts of [{ bpp: 32 }, { bpp: 32, topDown: true }, { bpp: 24 }]) {
+    const back = parseBMP(toBMP(img, opts));
+    assert.deepEqual([back.width, back.height], [img.width, img.height]);
+    assert.ok(back.data.equals(img.data), `pixels differ for ${JSON.stringify(opts)}`);
+    assert.equal(decodeImage(back).payload.toString(), 'hello from macOS');
+  }
+});
+
+test('searchY finds a strip below a title bar', () => {
+  const cells = encodeFrame(9, 'under the title bar');
+  const img = renderCells(cells, { cell: 6, ox: 0, oy: 56, width: 160 * 6 + 8, height: 120 });
+  assert.equal(decodeImage(img), null);
+  assert.equal(decodeImage(img, null, { searchY: 80 }).payload.toString(), 'under the title bar');
 });

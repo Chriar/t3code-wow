@@ -3,7 +3,7 @@
 Watch and run your [T3 Code](https://t3.codes) agent threads without leaving the game. It's a native addon for World of Warcraft: Forever, built from Blizzard's own UI templates so it looks and plays like the rest of the interface, plus a small bridge that connects it to T3 Code.
 
 > [!WARNING]
-> **Early release, still experimental.** It's built for and tested on one setup: **Omarchy 4.5.0**, **T3 Code Nightly** (0.1.7-nightly) and **World of Warcraft: Forever** (1.60.x) under Proton. Other setups may work but aren't supported yet. T3 Code Nightly's API changes often, so a T3 update can break things until this catches up. Expect rough edges, and please [report them](https://github.com/ryanrhughes/t3code-wow/issues).
+> **Early release, still experimental.** It's built for and tested on one setup: **Omarchy 4.5.0**, **T3 Code Nightly** (0.1.7-nightly) and **World of Warcraft: Forever** (1.60.x) under Proton. **macOS** with the native client is new and less tested (see [macOS](#macos)). Other setups may work but aren't supported yet. T3 Code Nightly's API changes often, so a T3 update can break things until this catches up. Expect rough edges, and please [report them](https://github.com/ryanrhughes/t3code-wow/issues).
 
 ## What it does
 
@@ -11,7 +11,7 @@ Watch and run your [T3 Code](https://t3.codes) agent threads without leaving the
 - **Quest tracker**: what's running, what needs you and what just finished, right under your quests, with live timers.
 - **Notices**: a toast, a sound and a chat line when a thread finishes or needs you. They wait until combat ends, and stay quiet in dungeons and raids if you like.
 - **Full controller support**: the D-pad moves between controls, A selects, B goes back, LB/RB switch tabs, X reads aloud and holding Y dictates. Hold both triggers and press Back to open it from anywhere.
-- **Voice**: dictate replies with Omarchy's dictation, and have replies read aloud by your desktop voice or the game's.
+- **Voice**: dictate replies with Omarchy's dictation, and have replies read aloud by your desktop voice (on macOS, the system voice) or the game's.
 - **Screenshots**: attach what's on your screen to a message so the agent can see your game.
 - **Every machine**: threads from your other computers via T3 Connect, all in one list.
 - **Usage**: your providers' plans and limits, the same as Omarchy's Agents panel shows.
@@ -19,9 +19,9 @@ Watch and run your [T3 Code](https://t3.codes) agent threads without leaving the
 
 ## Requirements
 
-- **Omarchy 4.5.0** (Hyprland). The bridge reads the game window with Hyprland's screen capture, and dictation and usage come from Omarchy's own tools.
+- **Omarchy 4.5.0** (Hyprland), or **macOS** (see [macOS](#macos)). On Omarchy the bridge reads the game window with Hyprland's screen capture, and dictation and usage come from Omarchy's own tools.
 - **T3 Code Nightly**, installed and running. Its `t3` command gives the bridge a login.
-- **World of Warcraft: Forever**, installed with Omarchy's Battle.net (Proton).
+- **World of Warcraft: Forever**, installed with Battle.net: Omarchy's Battle.net (Proton), or the native Mac app.
 - **Node.js 22** or newer.
 - **Game sound on.** The addon learns about new updates through silent sounds; with sound off it falls back to slower polling.
 
@@ -37,13 +37,22 @@ Then it tells you what to do in the game and waits until the game checks in. The
 
 To install from a clone instead, run `./install.sh` in it.
 
+### macOS
+
+The same install command works on a Mac with the native WoW: Forever client. Install Node.js 22 first (`brew install node`). The installer finds the game in `/Applications/World of Warcraft` or wherever Battle.net put it, and runs the bridge as a launch agent (`~/Library/LaunchAgents/t3code-wow.plist`) instead of a systemd service.
+
+- **Screen Recording permission.** The bridge reads the strip with macOS's `screencapture`, so it needs Screen Recording. The first time it runs, macOS asks, or lists `node` switched off under System Settings > Privacy & Security > Screen & System Audio Recording. Turn it on, then restart the bridge with `launchctl kickstart -k gui/$(id -u)/t3code-wow`. If the link stays down, `t3code-wow status` names the exact `node` it needs. The permission belongs to that `node` binary, so other programs that run with it can record the screen too. After you upgrade Node, macOS asks again for the new one.
+- **Display settings.** Run the game at the display's full resolution (its Retina resolution on a Retina display), fullscreen or windowed. A resolution the display stretches blurs the strip.
+- **Speech** uses the system voice (`say`). **Dictation** isn't available on macOS yet, and the Usage tab shows what T3 Code reports.
+- `~/.local/bin` isn't on a Mac's PATH by default. The installer says so; add it to your shell profile, or run `~/.local/bin/t3code-wow`.
+
 ### Uninstall
 
 ```bash
 t3code-wow uninstall
 ```
 
-This removes the addon and its update folders, its settings in the game, the bridge service, the bridge's T3 Code sessions (here and on any machine you added) and its files.
+This removes the addon and its update folders, its settings in the game, the bridge service (or launch agent), the bridge's T3 Code sessions (here and on any machine you added) and its files. On macOS, also turn `node` off under Screen & System Audio Recording: uninstalling can't do that for you.
 
 ## Using it
 
@@ -75,7 +84,7 @@ Addons can't open network connections or read files, so the addon and the bridge
 
 | Direction | How |
 | --- | --- |
-| Game → bridge | A small strip of coloured squares in the top-left corner for about a second after you do something. The bridge reads it with a screen capture. |
+| Game → bridge | A small strip of coloured squares in the top-left corner for about a second after you do something. The bridge reads it with a screen capture (`grim` on Hyprland, `screencapture` on macOS). |
 | Bridge → game | Load-on-demand "slot" addons. The game reads a slot's Lua from disk when it loads, so the bridge writes a fresh snapshot there first. |
 | "New data" signal | Large silent sound files the bridge fills or empties. The game re-reads big sounds every time it plays them, so the addon knows when to load the next slot. |
 

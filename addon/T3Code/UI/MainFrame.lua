@@ -246,7 +246,7 @@ function M:CreateButtonBar(f)
 	UI.Tooltip(bar.Mic, nil, function()
 		local d = ns.Store.data.bridge and ns.Store.data.bridge.dictation
 		return d and ("Click, speak, click again: your words are typed into the message box (" .. d .. " on your desktop). On a controller, hold Y.")
-			or "No dictation backend found on the desktop. Install one from the Omarchy menu (Install > AI > Dictation)."
+			or "No dictation backend found on the desktop. On Omarchy, install one from the menu (Install > AI > Dictation). Dictation isn't available on macOS yet."
 	end)
 
 	bar.Speak = UI.IconButton(f, "voicechat-icon-speaker", 26, "Read aloud", function()
