@@ -75,12 +75,13 @@ so a border or scaling quirk doesn't break it.
 The payload is records separated by `RS` (0x1E), with fields separated by `US` (0x1F):
 
 ```
-H  1  session  ui  nextSlot  sigNext  gen  flags  viewThreadId  addonVersion
+H  1  session  ui  nextSlot  sigNext  gen  flags  viewThreadId  addonVersion  slotCount  modelsHash
 C  id  verb  args…                      (one per queued command)
 ```
 
 - `session` is persistent (SavedVariables). `ui` is new every load, so the bridge can
   tell a `/reload` happened.
+- `modelsHash` is the hash of the model list the addon holds (empty until it has one). The bridge sends the list, several KB, only while this differs from its own, so it costs one publish after a `/reload` or a change in T3 Code instead of every publish.
 - `flags`:
   - `o`: window open
   - `t`: tracker on
@@ -89,6 +90,7 @@ C  id  verb  args…                      (one per queued command)
   - `s`: sound signals unavailable
 - Verbs:
   - `send`, `new`, `stop`
+  - `model` (`threadId instanceId model`). `new` takes the same `instanceId model` after its text; without them T3 Code's own default applies
   - `settle`, `unsettle`, `archive`, `read`
   - `approve`, `answer`
   - `speak`, `say`, `hush`, `dictate`
@@ -125,7 +127,8 @@ for WoW markup (`|` → `||`), then markdown is turned into colors and bullets.
 A publish works like this:
 
 1. Build the snapshot: threads, projects, the viewed thread's messages, pending
-   question or approval, usage, bridge status, command results and the ack.
+   question or approval, usage, bridge status, command results and the ack. The
+   model list rides along only when the addon's `modelsHash` is out of date.
 2. Write it to the slots the addon will load next (from its last confirmed position
    to a little past the bridge's prediction) and to slots 1–3 (what a `/reload`
    bootstraps from).
