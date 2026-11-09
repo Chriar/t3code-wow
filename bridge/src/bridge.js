@@ -25,7 +25,7 @@ import { findWowProcess, processKey } from './wow.js';
 import { markdownToWow, markdownToSpeech, firstLine, escapeWow } from './format.js';
 import { loadOrCreateKey, deriveKeys, open as openSealed, ENCRYPTED_VERSION } from './strip-crypto.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 export const STATE_DIR = path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local/state'), 't3code-wow');
 
 const sec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) : undefined);
