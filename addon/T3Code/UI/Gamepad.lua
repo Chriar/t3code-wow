@@ -494,6 +494,12 @@ local function ScrollTranscript(amount)
 end
 
 function G:OnButtonDown(key)
+	-- Presses an addon frame hands back don't reach the game's bindings, so Start
+	-- closes the window (giving the controller back) rather than relying on that.
+	if key == "PADFORWARD" then
+		ns.Main.frame:Hide()
+		return false
+	end
 	if PASS_THROUGH[key] then return true end
 	ns.Interacted()
 	local main = ns.Main
@@ -736,17 +742,17 @@ end
 ---------------------------------------------------------------------------
 -- Controller shortcut: hold both triggers and press Back.
 --
--- In Forever's controller mode the triggers aren't Shift/Ctrl but the action-bar
--- modifiers, Back is the game's "focus interface" button, and the keybinding screen
--- can't record controller chords, so a key binding can't do this. Instead we read
--- the controller's state (read-only, a few times a second). While both triggers are
--- held we briefly take the controller's buttons so the Back press opens T3 Code
--- instead of focusing the interface; every other button passes straight through.
--- In combat we can't take the buttons, so the window still opens but the game also
--- sees Back.
+-- In Forever's controller mode the triggers are the action-bar modifiers, Back is the
+-- game's "focus interface" button, and the keybinding screen can't record controller
+-- chords, so a key binding can't do this. Instead we read the controller's state each
+-- frame and open T3 Code when Back goes down while both triggers are held.
+--
+-- We never take controller input outside our own window: an addon frame that
+-- receives gamepad buttons breaks the LT + RT action bars (face buttons and D-pad),
+-- even when it hands every press back. So the game also sees that Back press; with
+-- nothing to focus it shows "no interface frame to focus", which we clear.
 
 L.CHORD = { "PADLTRIGGER", "PADRTRIGGER", "PADBACK" }
-local POLL = 0.05
 
 local indexCache = {}
 local function ButtonIndex(name)
@@ -771,68 +777,25 @@ local function ReadButtons()
 	return held
 end
 
-local watcher = CreateFrame("Frame", "T3CodeShortcutWatcher", UIParent)
-watcher:SetSize(1, 1)
-watcher:SetPoint("TOPLEFT")
+-- Read-only: this frame never enables gamepad input.
+local watcher = CreateFrame("Frame")
 L.watcher = watcher
-
-local function Arm(on)
-	if (L.armed or false) == on then return end
-	if InCombatLockdown() then
-		if not on then L.disarmAfterCombat = true end
-		return
-	end
-	local ok = pcall(watcher.EnableGamePadButton, watcher, on)
-	if ok then L.armed = on end
-end
-
--- Both triggers held right now. (The watcher can stay switched on after they're
--- released, because it can't be switched off in combat; Back on its own must then
--- still reach the game.)
-local function TriggersHeld()
-	if IsKeyDown then
-		local ok, l, r = pcall(function() return IsKeyDown("PADLTRIGGER"), IsKeyDown("PADRTRIGGER") end)
-		if ok and l ~= nil then return l and r end
-	end
-	return L.ChordHeld()
-end
-
-watcher:SetScript("OnGamePadButtonDown", function(_, key)
-	if key == "PADBACK" and TriggersHeld() then
-		L.firedAt = GetTime()
-		ns.Safe(function() L:Open() end)()
-		return false -- keep Back from also focusing the interface
-	end
-	return true -- everything else (including LT + RT + face buttons) goes to the game
-end)
-watcher:SetScript("OnGamePadButtonUp", function(_, key)
-	return key ~= "PADBACK"
-end)
-
-local elapsedSincePoll, backWasDown = 0, false
-watcher:SetScript("OnUpdate", function(_, elapsed)
-	elapsedSincePoll = elapsedSincePoll + elapsed
-	if elapsedSincePoll < POLL then return end
-	elapsedSincePoll = 0
+local backWasDown = false
+watcher:SetScript("OnUpdate", function()
 	if not L.enabled or (ns.Gamepad and ns.Gamepad.capturing) then
-		Arm(false)
+		backWasDown = false
 		return
 	end
 	local held = ReadButtons()
-	if not held then
-		Arm(false)
-		return
+	if not held then return end
+	local back = held.PADBACK
+	if back and not backWasDown and held.PADLTRIGGER and held.PADRTRIGGER then
+		L.firedAt = GetTime()
+		ns.Safe(function() L:Open() end)()
+		-- The game's own Back handler ran first; drop its "nothing to focus" error.
+		if UIErrorsFrame and UIErrorsFrame.Clear then pcall(UIErrorsFrame.Clear, UIErrorsFrame) end
 	end
-	local triggers = held.PADLTRIGGER and held.PADRTRIGGER
-	Arm(triggers)
-	-- Not armed (in combat): notice the press from the state instead.
-	if triggers and held.PADBACK and not backWasDown and not L.armed then
-		if GetTime() - (L.firedAt or 0) > 0.4 then
-			L.firedAt = GetTime()
-			ns.Safe(function() L:Open() end)()
-		end
-	end
-	backWasDown = held.PADBACK
+	backWasDown = back
 end)
 
 function L:SetupChord()
@@ -841,7 +804,6 @@ function L:SetupChord()
 	self.enabled = ns.db.settings.padChord ~= "off" and C_GamePad ~= nil and ButtonIndex("PADLTRIGGER") ~= nil
 	self.chord = self.enabled and table.concat(L.CHORD, "-") or nil
 	self.chordText = self.enabled and L.KeyText(self.chord) or nil
-	if not self.enabled then Arm(false) end
 end
 
 -- Inside the T3 Code window (which has the controller to itself), the same chord
@@ -882,14 +844,6 @@ ns:On("Login", function()
 	if L.chordText and ns.Gamepad:IsActive() and not ns.db.chordAnnounced then
 		ns.db.chordAnnounced = L.chord
 		ns.Print("Open T3 Code from your controller: hold " .. L.KeyText("PADLTRIGGER") .. " + " .. L.KeyText("PADRTRIGGER") .. " and press " .. L.KeyText("PADBACK") .. ". It's also in the game menu.")
-	end
-end)
-
-ns:On("Combat", function(inCombat)
-	if not inCombat and L.disarmAfterCombat then
-		L.disarmAfterCombat = nil
-		pcall(watcher.EnableGamePadButton, watcher, false)
-		L.armed = false
 	end
 end)
 

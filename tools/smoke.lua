@@ -411,46 +411,35 @@ check(Stub.loadCount == loads3, "no slot spent while no bell rings")
 os.remove(freshFile)
 
 -- Controller shortcut: hold both triggers, press Back. Read from the controller's
--- state; Back is only taken from the game while both triggers are held.
+-- state only: the watcher must never take gamepad input (that breaks LT + RT action bars).
 do
 	local L = ns.Launcher
 	L:SetupChord()
 	check(L.chordText and L.chordText:find("Left trigger", 1, true) and L.chordText:find("Gamepad_Ltr_View", 1, true), "shortcut shown as the player's buttons: " .. tostring(L.chordText))
 	check(not L.chordText:find("RT", 1, true), "no hard-coded Xbox names")
 	local w = L.watcher
+	check(w._scripts.OnGamePadButtonDown == nil and not w._gamepadEnabled, "the watcher never takes controller input")
+	local function frame() w._scripts.OnUpdate(w, 0.016) end
 	local wasOpen = ns.windowOpen
-	WOWSTUB.Tick(0.1)
-	check(not L.armed, "not taking any buttons while triggers are up")
-	WOWSTUB.padHeld.PADLTRIGGER, WOWSTUB.padHeld.PADRTRIGGER = true, true
-	WOWSTUB.Tick(0.1)
-	check(L.armed, "takes buttons while both triggers are held")
-	check(w._scripts.OnGamePadButtonDown(w, "PAD1") == true, "other buttons still reach the game")
-	check(w._scripts.OnGamePadButtonDown(w, "PADBACK") == false, "Back is kept from the game")
-	check(ns.windowOpen ~= wasOpen, "triggers + Back toggles T3 Code")
-	WOWSTUB.padHeld.PADLTRIGGER, WOWSTUB.padHeld.PADRTRIGGER = false, false
-	WOWSTUB.Tick(0.1)
-	check(not L.armed, "lets go once the triggers are released")
-	-- Still switched on (as when combat blocks switching off) but the triggers are up:
-	-- Back on its own must reach the game, and must not open T3 Code.
-	L.armed = true
-	local before = ns.windowOpen
-	check(w._scripts.OnGamePadButtonDown(w, "PADBACK") == true and ns.windowOpen == before, "Back without the triggers passes through even while armed")
-	L.armed = false
-	if ns.windowOpen ~= wasOpen then ns.Launcher:Open() end
-	-- In combat we can't take the buttons; the state poll still opens the window.
-	local realCombat = InCombatLockdown
-	InCombatLockdown = function() return true end
-	local before = ns.windowOpen
-	WOWSTUB.Tick(1) -- (presses closer than 0.4 s apart count once)
-	WOWSTUB.padHeld.PADLTRIGGER, WOWSTUB.padHeld.PADRTRIGGER = true, true
-	WOWSTUB.Tick(0.1)
+	WOWSTUB.padHeld = { PADLTRIGGER = true, PADRTRIGGER = true }
+	frame()
+	check(ns.windowOpen == wasOpen, "holding the triggers alone does nothing (LT + RT action bars stay the game's)")
 	WOWSTUB.padHeld.PADBACK = true
-	WOWSTUB.Tick(0.1)
-	check(not L.armed and ns.windowOpen ~= before, "in combat the chord still toggles T3 Code")
+	frame()
+	check(ns.windowOpen ~= wasOpen, "triggers + Back toggles T3 Code")
+	frame()
+	frame()
+	check(ns.windowOpen ~= wasOpen, "holding Back doesn't toggle it again")
+	WOWSTUB.padHeld = { PADBACK = true }
+	if ns.windowOpen ~= wasOpen then ns.Launcher:Open() end
+	frame()
 	WOWSTUB.padHeld = {}
-	WOWSTUB.Tick(0.1)
-	InCombatLockdown = realCombat
-	if ns.windowOpen ~= before then ns.Launcher:Open() end
+	frame()
+	WOWSTUB.padHeld = { PADBACK = true }
+	frame()
+	check(ns.windowOpen == wasOpen, "Back on its own is left to the game")
+	WOWSTUB.padHeld = {}
+	frame()
 end
 
 -- Tracker section follows the objective tracker, in the quest column.

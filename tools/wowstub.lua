@@ -65,6 +65,7 @@ local SETTERS = {
 	SetChecked = function(self, c) self._checked = c end,
 	SetAtlas = function(self, a) self._atlas = a end,
 	SetFrameLevel = function(self, l) self._level = l end,
+	EnableGamePadButton = function(self, on) self._gamepadEnabled = on end,
 	SetPoint = function(self, point, rel, ...) self._points = self._points or {} table.insert(self._points, { point, rel, ... }) end,
 	ClearAllPoints = function(self) self._points = {} end,
 	SetColorTexture = function(self, r, g, b) self._color = { r, g, b } end,
