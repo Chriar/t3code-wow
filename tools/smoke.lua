@@ -430,6 +430,12 @@ do
 	WOWSTUB.padHeld.PADLTRIGGER, WOWSTUB.padHeld.PADRTRIGGER = false, false
 	WOWSTUB.Tick(0.1)
 	check(not L.armed, "lets go once the triggers are released")
+	-- Still switched on (as when combat blocks switching off) but the triggers are up:
+	-- Back on its own must reach the game, and must not open T3 Code.
+	L.armed = true
+	local before = ns.windowOpen
+	check(w._scripts.OnGamePadButtonDown(w, "PADBACK") == true and ns.windowOpen == before, "Back without the triggers passes through even while armed")
+	L.armed = false
 	if ns.windowOpen ~= wasOpen then ns.Launcher:Open() end
 	-- In combat we can't take the buttons; the state poll still opens the window.
 	local realCombat = InCombatLockdown

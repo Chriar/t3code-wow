@@ -251,6 +251,7 @@ _G.C_VoiceChat = { GetTtsVoices = function() return {} end, SpeakText = noop, St
 _G.C_TTSSettings = { GetVoiceOptionID = function() return 0 end, GetSpeechRate = function() return 0 end, GetSpeechVolume = function() return 100 end }
 local PAD_INDEX = { PAD1 = 0, PAD2 = 1, PAD3 = 2, PAD4 = 3, PADLSHOULDER = 4, PADRSHOULDER = 5, PADLTRIGGER = 6, PADRTRIGGER = 7, PADBACK = 8, PADFORWARD = 9 }
 Stub.padHeld = {}
+_G.IsKeyDown = function(key) return Stub.padHeld[key] or false end
 _G.C_GamePad = {
 	GetActiveDeviceID = function() return nil end,
 	ButtonBindingToIndex = function(name) return PAD_INDEX[name] end,

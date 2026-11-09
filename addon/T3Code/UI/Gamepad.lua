@@ -786,13 +786,24 @@ local function Arm(on)
 	if ok then L.armed = on end
 end
 
+-- Both triggers held right now. (The watcher can stay switched on after they're
+-- released, because it can't be switched off in combat; Back on its own must then
+-- still reach the game.)
+local function TriggersHeld()
+	if IsKeyDown then
+		local ok, l, r = pcall(function() return IsKeyDown("PADLTRIGGER"), IsKeyDown("PADRTRIGGER") end)
+		if ok and l ~= nil then return l and r end
+	end
+	return L.ChordHeld()
+end
+
 watcher:SetScript("OnGamePadButtonDown", function(_, key)
-	if key == "PADBACK" then
+	if key == "PADBACK" and TriggersHeld() then
 		L.firedAt = GetTime()
 		ns.Safe(function() L:Open() end)()
 		return false -- keep Back from also focusing the interface
 	end
-	return true
+	return true -- everything else (including LT + RT + face buttons) goes to the game
 end)
 watcher:SetScript("OnGamePadButtonUp", function(_, key)
 	return key ~= "PADBACK"
