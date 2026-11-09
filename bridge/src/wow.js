@@ -11,6 +11,44 @@ const FLAVOR = '_forever_';
 // Omarchy's Battle.net installer (omarchy-install-gaming-battlenet) uses this prefix.
 export const OMARCHY_PREFIX = path.join(os.homedir(), 'Games/battlenet');
 
+// Prefixes that game launchers record for their games: Faugus Launcher keeps them in
+// games.json, Lutris in one YAML file per game. Either can put a prefix anywhere, such
+// as ~/Games itself.
+function launcherPrefixes(home) {
+  const out = [];
+  for (const file of [
+    path.join(home, '.local/share/faugus-launcher/games.json'),
+    path.join(home, '.var/app/io.github.Faugus.faugus-launcher/data/faugus-launcher/games.json'),
+  ]) {
+    try {
+      for (const g of JSON.parse(fs.readFileSync(file, 'utf8'))) if (typeof g?.prefix === 'string') out.push(g.prefix);
+    } catch {}
+  }
+  for (const dir of [path.join(home, '.local/share/lutris/games'), path.join(home, '.config/lutris/games')]) {
+    let files = [];
+    try {
+      files = fs.readdirSync(dir).filter((f) => f.endsWith('.yml'));
+    } catch {}
+    for (const f of files) {
+      try {
+        const m = /^\s+prefix:\s*['"]?(.+?)['"]?\s*$/m.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
+        if (m) out.push(m[1].replace(/^~(?=\/)/, home));
+      } catch {}
+    }
+  }
+  return out;
+}
+
+// Where Faugus Launcher creates new prefixes (its "default-prefix" setting, ~/Faugus
+// unless changed).
+function faugusPrefixDir(home) {
+  try {
+    const dir = JSON.parse(fs.readFileSync(path.join(home, '.config/faugus-launcher/config.json'), 'utf8'))['default-prefix'];
+    if (typeof dir === 'string' && dir) return dir;
+  } catch {}
+  return path.join(home, 'Faugus');
+}
+
 // Wine prefixes that might hold Battle.net, most likely first.
 function candidateRoots() {
   const home = os.homedir();
@@ -18,15 +56,17 @@ function candidateRoots() {
   const add = (p) => p && !roots.includes(p) && roots.push(p);
   add(OMARCHY_PREFIX);
   add(process.env.WINEPREFIX);
+  for (const p of launcherPrefixes(home)) add(p);
   add(path.join(home, 'Games/battle-net'));
   add(path.join(home, 'Games/blizzard'));
   add(path.join(home, '.wine'));
   add(path.join(home, '.local/share/lutris/prefixes/battlenet'));
-  // Heroic, Bottles and Steam (non-Steam game shortcut) prefixes.
+  // Heroic, Bottles, Faugus and Steam (non-Steam game shortcut) prefixes.
   for (const base of [
     path.join(home, 'Games/Heroic/Prefixes/default'),
     path.join(home, '.var/app/com.usebottles.bottles/data/bottles/bottles'),
     path.join(home, '.local/share/bottles/bottles'),
+    faugusPrefixDir(home),
     path.join(home, '.local/share/Steam/steamapps/compatdata'),
     path.join(home, '.steam/steam/steamapps/compatdata'),
   ]) {
@@ -37,7 +77,15 @@ function candidateRoots() {
       }
     } catch {}
   }
-  return roots.filter((r) => fs.existsSync(path.join(r, 'drive_c')));
+  // umu and Proton link <prefix>/pfx back to the prefix itself: count each prefix once.
+  const seen = new Set();
+  return roots.filter((r) => {
+    if (!fs.existsSync(path.join(r, 'drive_c'))) return false;
+    const real = fs.realpathSync(r);
+    if (seen.has(real)) return false;
+    seen.add(real);
+    return true;
+  });
 }
 
 // A Windows path ("C:/Games/World of Warcraft") inside a prefix, as a Linux path.
