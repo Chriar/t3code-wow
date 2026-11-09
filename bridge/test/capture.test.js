@@ -8,17 +8,15 @@ const screens = [
 ];
 const win = (pid, X, Y, Width, Height, extra = {}) => ({ pid, owner: 'World of Warcraft', layer: 0, onscreen: true, bounds: { X, Y, Width, Height }, ...extra });
 
-test('a fullscreen window on the Retina screen', () => {
+test('a window on the Retina screen', () => {
   const w = pickMacWindow({ windows: [win(5, 0, 0, 1512, 982)], screens }, 5);
-  assert.deepEqual([w.found, w.visible, w.scale, w.fullscreen], [true, true, 2, true]);
+  assert.deepEqual([w.found, w.visible, w.scale], [true, true, 2]);
 });
 
 test('a windowed client on the external screen, found by pid over a same-named window', () => {
-  // The external screen's top in window-list coordinates: 982 - (-100 + 1440) = -358.
   const info = { windows: [win(9, 10, 10, 800, 600), win(5, 1600, -300, 1280, 748)], screens };
   const w = pickMacWindow(info, 5);
-  assert.deepEqual([w.x, w.y, w.scale, w.fullscreen], [1600, -300, 1, false]);
-  assert.equal(pickMacWindow({ windows: [win(5, 1512, -358, 2560, 1440)], screens }, 5).fullscreen, true);
+  assert.deepEqual([w.x, w.y, w.scale], [1600, -300, 1]);
 });
 
 test('ignores menus and tiny windows, and reports a window on another Space as hidden', () => {

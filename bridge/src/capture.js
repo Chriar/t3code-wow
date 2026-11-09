@@ -137,8 +137,8 @@ function run(argv) {
   return JSON.stringify({ windows, screens });
 }`;
 
-// The game window from MAC_WINDOWS_JXA's output: its bounds, the scale of the screen
-// it's on, and whether it fills that screen (no title bar above the game).
+// The game window from MAC_WINDOWS_JXA's output: its bounds and the scale of the screen
+// it's on.
 export function pickMacWindow(info, pid) {
   const normal = (info?.windows || []).filter((w) => w.layer === 0 && w.bounds?.Width > 100 && w.bounds?.Height > 100);
   const mine = normal.filter((w) => pid && w.pid === pid);
@@ -153,13 +153,8 @@ export function pickMacWindow(info, pid) {
   const cx = b.X + b.Width / 2;
   const cy = b.Y + b.Height / 2;
   const screen = screens.find((s) => cx >= s.x && cx < s.x + s.width && cy >= s.y && cy < s.y + s.height) || screens[0];
-  const fullscreen = !!screen && Math.abs(b.X - screen.x) < 1 && Math.abs(b.Y - screen.y) < 1 && Math.abs(b.Width - screen.width) < 1 && Math.abs(b.Height - screen.height) < 1;
-  return { found: true, visible: win.onscreen, x: b.X, y: b.Y, width: b.Width, height: b.Height, scale: screen?.scale || 1, fullscreen };
+  return { found: true, visible: win.onscreen, x: b.X, y: b.Y, width: b.Width, height: b.Height, scale: screen?.scale || 1 };
 }
-
-// A windowed game has a title bar between the window's top and the strip. Search this
-// many extra points down rather than guessing its exact height.
-const MAC_TITLE_SLACK = 40;
 
 export const SCREEN_PERMISSION_HELP =
   `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge.`;
@@ -273,7 +268,10 @@ export class StripCapture {
         }
         scale = win.scale;
         region = { x: win.x, y: win.y };
-        if (!win.fullscreen) searchY = MAC_TITLE_SLACK;
+        // The strip can start below the window's top: under the title bar of a windowed
+        // game, or in fullscreen on a MacBook display, where the game moves its UI below
+        // the notch. Search 40 points down rather than guessing either height.
+        searchY = 40;
       }
       const w = Math.ceil(px.width / scale);
       const h = Math.ceil(px.height / scale) + searchY;
