@@ -11,7 +11,7 @@ Watch and run your [T3 Code](https://t3.codes) agent threads without leaving the
 - **Quest tracker**: what's running, what needs you and what just finished, right under your quests, with live timers.
 - **Notices**: a toast, a sound and a chat line when a thread finishes or needs you. They wait until combat ends, and stay quiet in dungeons and raids if you like.
 - **Full controller support**: the D-pad moves between controls, A selects, B goes back, LB/RB switch tabs, X reads aloud and holding Y dictates. Hold both triggers and press Back to open it from anywhere.
-- **Voice**: dictate replies with Omarchy's dictation, and have replies read aloud by your desktop voice or the game's (on macOS, the system voice).
+- **Voice**: dictate replies with Omarchy's dictation, and have replies read aloud by your desktop voice (on macOS, the system voice) or the game's.
 - **Screenshots**: attach what's on your screen to a message so the agent can see your game.
 - **Every machine**: threads from your other computers via T3 Connect, all in one list.
 - **Usage**: your providers' plans and limits, the same as Omarchy's Agents panel shows.
@@ -41,8 +41,8 @@ To install from a clone instead, run `./install.sh` in it.
 
 The same install command works on a Mac with the native WoW: Forever client. Install Node.js 22 first (`brew install node`). The installer finds the game in `/Applications/World of Warcraft` or wherever Battle.net put it, and runs the bridge as a launch agent (`~/Library/LaunchAgents/t3code-wow.plist`) instead of a systemd service.
 
-- **Screen Recording permission.** The bridge reads the strip with macOS's `screencapture`, so it needs Screen Recording. The first time it runs, macOS asks, or lists `node` switched off under System Settings > Privacy & Security > Screen & System Audio Recording. Turn it on; `t3code-wow status` names the exact `node` it needs. The permission belongs to that `node` binary, so after you upgrade Node, turn it on for the new one and rerun the install command.
-- **Display settings.** Run the game at 100% render scale, fullscreen or windowed, so its pixels reach the screen unscaled. A resolution the display stretches blurs the strip.
+- **Screen Recording permission.** The bridge reads the strip with macOS's `screencapture`, so it needs Screen Recording. The first time it runs, macOS asks, or lists `node` switched off under System Settings > Privacy & Security > Screen & System Audio Recording. Turn it on, then restart the bridge with `launchctl kickstart -k gui/$(id -u)/t3code-wow`. If the link stays down, `t3code-wow status` names the exact `node` it needs. The permission belongs to that `node` binary, so other programs that run with it can record the screen too. After you upgrade Node, macOS asks again for the new one.
+- **Display settings.** Run the game at the display's full resolution (its Retina resolution on a Retina display), fullscreen or windowed. A resolution the display stretches blurs the strip.
 - **Speech** uses the system voice (`say`). **Dictation** isn't available on macOS yet, and the Usage tab shows what T3 Code reports.
 - `~/.local/bin` isn't on a Mac's PATH by default. The installer says so; add it to your shell profile, or run `~/.local/bin/t3code-wow`.
 
@@ -52,7 +52,7 @@ The same install command works on a Mac with the native WoW: Forever client. Ins
 t3code-wow uninstall
 ```
 
-This removes the addon and its update folders, its settings in the game, the bridge service (or launch agent), the bridge's T3 Code sessions (here and on any machine you added) and its files.
+This removes the addon and its update folders, its settings in the game, the bridge service (or launch agent), the bridge's T3 Code sessions (here and on any machine you added) and its files. On macOS, also turn `node` off under Screen & System Audio Recording: uninstalling can't do that for you.
 
 ## Using it
 
