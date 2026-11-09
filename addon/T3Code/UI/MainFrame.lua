@@ -177,12 +177,21 @@ function M:CreateThreadsPage(page)
 	header.Archive:SetPoint("RIGHT", header.Action, "LEFT", -4, 0)
 	header.Archive:Hide()
 	UI.Tooltip(header.Archive, "Archive", "Hide this thread from the list (it stays in T3 Code's archive).")
-	header.Project = UI.Dropdown(header, 220, function(value)
+	header.Project = UI.Dropdown(header, 190, function(value)
 		M.newProject = value
+		M.newModel = nil
 		M:Refresh()
 	end)
 	header.Project:SetPoint("RIGHT", -6, 0)
 	header.Project:Hide()
+	-- The model: for the new thread, or the open thread's next runs. Only a deliberate
+	-- pick from the list changes it (no wheel or right-click stepping), because each
+	-- change on a thread is a command to T3.
+	header.Model = UI.Dropdown(header, 190, function(value) M:PickModel(value) end)
+	header.Model:SetScript("OnClick", function(self) UI.OpenList(self) end)
+	header.Model:EnableMouseWheel(false)
+	header.Model:SetScript("OnMouseWheel", nil)
+	header.Model:Hide()
 	right.Header = header
 
 	local composer = UI.Inset(right)
@@ -377,6 +386,7 @@ function M:StartNewThread(projectId)
 	self:Create()
 	self:SaveDraft()
 	self.mode = "new"
+	self.newModel = nil
 	local filter = ns.db.settings.project
 	self.newProject = projectId or (filter ~= "all" and filter) or ns.db.settings.lastProject
 	if not ns.Store.projectsById[self.newProject or ""] then
@@ -426,7 +436,8 @@ function M:Send(textOverride)
 			return
 		end
 		ns.db.settings.lastProject = self.newProject
-		self.pendingNew = ns.Transport:Send("new", self.newProject, text)
+		local instanceId, slug = ns.Store.SplitModelKey(self:NewThreadModel())
+		self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
 		self.pendingNewText = text
 		ns.db.drafts.__new = nil
 	elseif ns.viewId and not textOverride and ns.Transcript:CustomAnswer(text) then
@@ -597,14 +608,24 @@ function M:Refresh()
 	if self.mode == "new" then
 		f.Subtitle:SetText("New Thread")
 		header.Text:SetText(ns.Color("gold", "Start a new thread in"))
-		header.Text:ClearAllPoints()
-		header.Text:SetPoint("LEFT", 12, 0)
-		header.Text:SetPoint("RIGHT", header.Project, "LEFT", -8, 0)
-		header.Text:SetJustifyH("RIGHT")
 		header.Action:Hide()
 		header.Archive:Hide()
 		header.Project:Show()
 		self:SetupProjectDropdown()
+		local withModel = self:SetupModelDropdown()
+		header.Model.tipBody = "The model the new thread starts on. It's remembered for this project."
+		header.Model:ClearAllPoints()
+		header.Model:SetPoint("RIGHT", -6, 0)
+		header.Project:ClearAllPoints()
+		if withModel then
+			header.Project:SetPoint("RIGHT", header.Model, "LEFT", -6, 0)
+		else
+			header.Project:SetPoint("RIGHT", -6, 0)
+		end
+		header.Text:ClearAllPoints()
+		header.Text:SetPoint("LEFT", 12, 0)
+		header.Text:SetPoint("RIGHT", header.Project, "LEFT", -8, 0)
+		header.Text:SetJustifyH("RIGHT")
 		self:SetPlaceholder("Describe what the agent should do  (Shift+Enter for a new line)")
 		right.Hint:SetText(self:ShotHint() or "")
 		f.Bar.Send:SetText("Start")
@@ -623,13 +644,18 @@ function M:Refresh()
 			header.Action:SetShown(true)
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
 			header.Archive:SetShown(t.s == "settled")
-			header.Text:SetPoint("RIGHT", t.s == "settled" and -200 or -110, 0)
+			local withModel = self:SetupModelDropdown()
+			header.Model.tipBody = "The model for this thread. A change applies from the next reply on."
+			header.Model:ClearAllPoints()
+			header.Model:SetPoint("RIGHT", t.s == "settled" and header.Archive or header.Action, "LEFT", -4, 0)
+			header.Text:SetPoint("RIGHT", (t.s == "settled" and -200 or -110) - (withModel and header.Model:GetWidth() + 4 or 0), 0)
 			self:SetPlaceholder(t.s == "working" and "Queue a follow-up  (Shift+Enter for a new line)" or "Message the agent  (Shift+Enter for a new line)")
 		else
 			f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
 			header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))
 			header.Action:Hide()
 			header.Archive:Hide()
+			header.Model:Hide()
 		end
 		right.Hint:SetText(self:ShotHint() or (ns.Gamepad and ns.Gamepad:IsActive() and ns.Gamepad:HintText()) or "")
 	end
@@ -640,6 +666,71 @@ function M:Refresh()
 	self:UpdateCounter()
 	ns.ThreadList:Refresh()
 	ns.Transcript:Refresh()
+end
+
+---------------------------------------------------------------------------
+-- Model picker
+
+-- The model a new thread starts on: what was last picked for this project, else what
+-- T3 would choose for it, else the top of the list.
+function M:NewThreadModel()
+	if self.newModel then return self.newModel end
+	local env = ns.Store.EnvOf(self.newProject)
+	local saved = self.newProject and ns.db.models[self.newProject]
+	if ns.Store:Offers(env, saved) then return saved end
+	local p = ns.Store.projectsById[self.newProject or ""]
+	if p and p.dm then return p.dm end
+	local options = ns.Store:ModelOptions(env)
+	return options and options[1] and options[1].value
+end
+
+-- The open thread's model, or the one just picked for it until T3 confirms it.
+function M:ThreadModel(t)
+	local current = ns.Store.ModelKey(t.mi, t.m)
+	local pending = self.pendingModel
+	if pending and pending.thread == t.id then
+		if pending.value == current or GetTime() - pending.at > 30 then
+			self.pendingModel = nil
+		else
+			return pending.value
+		end
+	end
+	return current
+end
+
+-- Fill the model dropdown for what's on screen. Returns whether it's shown.
+function M:SetupModelDropdown()
+	local dd = self.frame.Pages.threads.Right.Header.Model
+	local env, current
+	if self.mode == "new" then
+		env, current = ns.Store.EnvOf(self.newProject), self:NewThreadModel()
+	else
+		local t = ns.Store:Thread(ns.viewId)
+		if t then env, current = ns.Store.EnvOf(t.id), self:ThreadModel(t) end
+	end
+	local options = env and ns.Store:ModelOptions(env, current)
+	if not options or (self.mode ~= "new" and not current) then
+		dd:Hide()
+		return false
+	end
+	dd.value = current
+	dd:SetOptions(options)
+	dd:Show()
+	return true
+end
+
+function M:PickModel(value)
+	if self.mode == "new" then
+		self.newModel = value
+		if self.newProject then ns.db.models[self.newProject] = value end
+	else
+		local t = ns.Store:Thread(ns.viewId)
+		if not t or value == self:ThreadModel(t) then return end
+		local instanceId, slug = ns.Store.SplitModelKey(value)
+		if not instanceId then return end
+		self.pendingModel = { thread = t.id, value = value, at = GetTime(), cmd = ns.Transport:Send("model", t.id, instanceId, slug) }
+	end
+	self:Refresh()
 end
 
 function M:SetupProjectDropdown()
@@ -717,6 +808,10 @@ ns:On("CommandResult", function(r)
 	if r.ok == false and r.msg then
 		ns.Print(ns.Color("red", r.msg))
 		if UIErrorsFrame then UIErrorsFrame:AddMessage("T3 Code: " .. r.msg, 1, 0.2, 0.2) end
+	end
+	if M.pendingModel and r.id == M.pendingModel.cmd and r.ok == false then
+		M.pendingModel = nil
+		if M.frame and M.frame:IsShown() then M:Refresh() end
 	end
 	if r.id == M.pendingNew then
 		M.pendingNew = nil

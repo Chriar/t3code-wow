@@ -91,12 +91,32 @@ check(true, "pages switch")
 -- New thread flow
 ns.Main:StartNewThread()
 check(ns.Main.mode == "new" and ns.Main.newProject ~= nil, "new thread mode with project " .. tostring(ns.Main.newProject))
+local hdr = ns.Main.frame.Pages.threads.Right.Header
+check(ns.Transport:Payload():find(ns.Store.modelsHash, 1, true) ~= nil and ns.Store.modelsHash ~= "", "hello reports the model list it has: " .. ns.Store.modelsHash)
+check(hdr.Model:IsShown() and #hdr.Model.options >= 1, "model picker shown for a new thread: " .. #hdr.Model.options .. " models")
+local pick = hdr.Model.options[#hdr.Model.options]
+ns.Main:PickModel(pick.value)
+check(ns.db.models[ns.Main.newProject] == pick.value and ns.Main:NewThreadModel() == pick.value, "picked model remembered for the project: " .. pick.label)
 ns.Main.composer._text = "Build a thing"
 ns.Main:Send()
 check(ns.Transport:Payload():find("\031new\031", 1, true) ~= nil, "new-thread command in payload")
+local pickI, pickS = ns.Store.SplitModelKey(pick.value)
+check(ns.Transport:Payload():find("Build a thing\031" .. pickI .. "\031" .. pickS, 1, true) ~= nil, "picked model rides along with the new thread")
 ns.Transport:Apply({ gen = data.gen + 2, results = { { id = ns.Main.pendingNew, ok = true, open = firstThread.id } }, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, ack = { ui = ns.ui, seq = ns.Transport.stripSeq } })
 check(ns.Main.mode == "thread" and ns.viewId == firstThread.id, "result opened the new thread")
 check(#ns.Transport.queue == 0, "all commands acknowledged")
+check(hdr.Model:IsShown(), "model picker shown for an open thread")
+local cur = ns.Main:ThreadModel(ns.Store:Thread(ns.viewId))
+local other
+for _, o in ipairs(hdr.Model.options) do if o.value ~= cur then other = o break end end
+if other then
+	ns.Main:PickModel(other.value)
+	local oi, os_ = ns.Store.SplitModelKey(other.value)
+	check(ns.Transport:Payload():find("\031model\031" .. ns.viewId .. "\031" .. oi .. "\031" .. os_, 1, true) ~= nil, "switching a thread's model sends model")
+	check(hdr.Model.value == other.value, "the picker shows the new model straight away")
+	ns.Transport:Apply({ gen = data.gen + 3, results = { { id = ns.Main.pendingModel.cmd, ok = false, msg = "Codex is switched off in T3 Code. Pick another model." } }, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, ack = { ui = ns.ui, seq = ns.Transport.stripSeq } })
+	check(ns.Main.pendingModel == nil and hdr.Model.value == cur, "a refused switch puts the picker back")
+end
 
 -- Question / approval rendering
 data.gen = data.gen + 10

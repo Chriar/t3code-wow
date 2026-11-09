@@ -7,6 +7,10 @@ local Store = {
 	byId = {},
 	projectsById = {},
 	applied = 0,
+	-- Model lists by machine ("" for this one). The bridge sends them only when they
+	-- change (we report modelsHash in the hello), so they outlive each snapshot.
+	models = {},
+	modelsHash = "",
 }
 ns.Store = Store
 
@@ -28,6 +32,13 @@ function Store:Apply(data)
 	for _, p in ipairs(data.projects) do projectsById[p.id] = p end
 	self.data, self.byId, self.projectsById = data, byId, projectsById
 	self.applied = self.applied + 1
+	if type(data.models) == "table" and type(data.models.g) == "table" then
+		local models = {}
+		for _, g in ipairs(data.models.g) do
+			if type(g.m) == "table" then models[g.e or ""] = g.m end
+		end
+		self.models, self.modelsHash = models, tostring(data.models.h or "")
+	end
 
 	if self.applied > 1 then
 		for id, t in pairs(byId) do
@@ -81,6 +92,74 @@ function Store:Active()
 		if t.s == "working" or t.s == "input" or t.s == "plan" then table.insert(list, t) end
 	end
 	return list
+end
+
+---------------------------------------------------------------------------
+-- Models
+
+-- A model's key: instance and slug joined by a tab, as the bridge writes them.
+function Store.ModelKey(instanceId, slug)
+	if not instanceId or not slug then return nil end
+	return instanceId .. "\t" .. slug
+end
+
+function Store.SplitModelKey(key)
+	return (key or ""):match("^(.-)\t(.+)$")
+end
+
+-- The machine a thread or project id belongs to: the bridge prefixes other
+-- machines' ids with their code and "~" ("" for this one).
+function Store.EnvOf(id)
+	return id and id:match("^([^~]+)~") or ""
+end
+
+function Store:Offers(env, key)
+	if not key then return false end
+	for _, m in ipairs(self.models[env or ""] or {}) do
+		if Store.ModelKey(m.i, m.s) == key then return true end
+	end
+	return false
+end
+
+function Store:ModelLabel(env, key)
+	for _, m in ipairs(self.models[env or ""] or {}) do
+		if Store.ModelKey(m.i, m.s) == key then return m.l end
+	end
+	local _, slug = Store.SplitModelKey(key)
+	return slug
+end
+
+-- Choices for a model picker on machine `env`: the models its latest threads used
+-- come first (a short reach on a controller), then the rest in T3's order. `current`
+-- is listed even when it's no longer offered (a legacy model, say).
+function Store:ModelOptions(env, current)
+	local list = self.models[env or ""]
+	if not list or #list == 0 then return nil end
+	local labels = {}
+	for _, m in ipairs(list) do labels[Store.ModelKey(m.i, m.s)] = m.l end
+	local options, seen = {}, {}
+	local function add(key, label)
+		if not key or not label or seen[key] then return end
+		seen[key] = true
+		table.insert(options, { value = key, label = label })
+	end
+	if current and not labels[current] then add(current, select(2, Store.SplitModelKey(current))) end
+	local recent = {}
+	for _, t in ipairs(self.data.threads) do
+		if t.mi and t.m and Store.EnvOf(t.id) == (env or "") then table.insert(recent, t) end
+	end
+	table.sort(recent, function(a, b) return (a.st or a.u or 0) > (b.st or b.u or 0) end)
+	local recents = 0
+	for _, t in ipairs(recent) do
+		if recents >= 4 then break end
+		local key = Store.ModelKey(t.mi, t.m)
+		if labels[key] and not seen[key] then
+			add(key, labels[key])
+			recents = recents + 1
+		end
+	end
+	for _, m in ipairs(list) do add(Store.ModelKey(m.i, m.s), m.l) end
+	return options
 end
 
 function Store:View()

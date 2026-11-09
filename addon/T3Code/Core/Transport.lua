@@ -317,6 +317,7 @@ function T:Payload()
 	local hello = Codec.Record({
 		"H", 1, db.session, ns.ui, self.slotCursor, db.sigNext or 1, db.gen or 0,
 		self:Flags(), link and ns.viewId or "", ns.version, self.slotCount,
+		ns.Store.modelsHash or "",
 	})
 	if not link then return hello end
 	local limit = Codec.MAX_PAYLOAD - Codec.SEAL_OVERHEAD

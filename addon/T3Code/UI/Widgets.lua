@@ -113,7 +113,7 @@ function UI.Cycler(parent, width, onChange)
 	b:SetScript("OnClick", function(self, button) self:Step(button == "RightButton" and -1 or 1) end)
 	b:EnableMouseWheel(true)
 	b:SetScript("OnMouseWheel", function(self, delta) self:Step(delta > 0 and -1 or 1) end)
-	UI.Tooltip(b, function(self) return self.Text:GetText() end, "Click to choose. Scroll to step through.")
+	UI.Tooltip(b, function(self) return self.Text:GetText() end, function(self) return self.tipBody or "Click to choose. Scroll to step through." end)
 	return b
 end
 
