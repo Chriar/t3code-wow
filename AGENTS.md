@@ -6,11 +6,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for how changes are reviewed, and [docs/
 
 - `addon/T3Code/`: the WoW: Forever addon (Lua 5.1, Blizzard UI templates). `Core/` holds the link to the bridge (`Transport.lua`, `Codec.lua`, `Crypto.lua`) and state; `UI/` holds the window, tracker, notices, controller support and minimap button.
 - `bridge/`: the Node bridge (`t3code-wow`), with no npm dependencies. `src/bridge.js` handles commands, pacing and snapshots, `src/t3.js` and `src/fleet.js` talk to T3 Code, `src/slots.js` writes slots and bells, `src/capture.js` reads the strip, `src/wow.js` finds the game.
+- `tools/`: the WoW API stub and headless addon tests.
 
 ## Platforms
 
 Linux (Omarchy, the game under Proton) and macOS (the native client) are both supported. Keep platform differences inside the module that owns them: `wow.js` (install folders and the running client: Wine prefixes and `/proc` on Linux, Battle.net's records and `ps` on macOS), `capture.js` (`grim`/`import` on Linux; CoreGraphics' window list through JXA and `screencapture` on macOS, which needs the Screen Recording permission), `voice.js` (`spd-say`/`espeak-ng`, or `say`) and the service in `bin/t3code-wow.js` (a systemd user unit or a launchd agent). On macOS, use only tools that ship with the system: nothing to compile or install.
-- `tools/`: the WoW API stub and headless addon tests.
 
 ## Measured limits of the game client
 
