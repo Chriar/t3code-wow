@@ -140,7 +140,7 @@ const systemd = {
     ].join('\n'));
     quiet('systemctl', ['--user', 'daemon-reload']);
     quiet('systemctl', ['--user', 'enable', this.name]);
-    quiet('systemctl', ['--user', 'restart', this.name]);
+    return quiet('systemctl', ['--user', 'restart', this.name]);
   },
   restart() {
     quiet('systemctl', ['--user', 'restart', this.name]);
@@ -181,11 +181,10 @@ const launchd = {
     ].join('\n'));
     // Reload so a changed plist (a new node path, say) takes effect.
     quiet('launchctl', ['bootout', `${this.target()}/${this.name}`], { warn: false });
-    if (!quiet('launchctl', ['bootstrap', this.target(), this.file], { warn: false })) {
-      // bootout can still be finishing ("Bootstrap failed: 5"); only the retry's error is worth showing.
-      spawnSync('sleep', ['1']);
-      quiet('launchctl', ['bootstrap', this.target(), this.file]);
-    }
+    if (quiet('launchctl', ['bootstrap', this.target(), this.file], { warn: false })) return true;
+    // bootout can still be finishing ("Bootstrap failed: 5"); only the retry's error is worth showing.
+    spawnSync('sleep', ['1']);
+    return quiet('launchctl', ['bootstrap', this.target(), this.file]);
   },
   restart() {
     quiet('launchctl', ['kickstart', '-k', `${this.target()}/${this.name}`]);
@@ -251,7 +250,11 @@ async function cmdInstall(args) {
   console.log(`${C.g('✓')} T3 Code session ready ${C.d('(scoped to reading and running threads; revoke with `t3 auth session list`)')}`);
 
   if (!args['no-service']) {
-    service.install();
+    if (!service.install()) {
+      console.log(C.r(`✗ The bridge's ${service.kind} didn't start (the error is above). Fix that, then run \`t3code-wow install\` again.`));
+      process.exitCode = 1;
+      return;
+    }
     console.log(`${C.g('✓')} Bridge running as the ${service.name} ${service.kind}`);
     if (MAC) {
       console.log(`${C.y('!')} The bridge reads the game's pixels, so macOS asks for Screen Recording permission the first time.`);
