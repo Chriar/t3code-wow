@@ -396,7 +396,7 @@ async function cmdProbe() {
     execFileSync('magick', [out, out.replace(/\.ppm$/, '.png')]);
     png = out.replace(/\.ppm$/, '.png');
   } catch {}
-  const dec = decodeImage(img);
+  const dec = decodeImage(img, null, { searchY: res.searchY });
   console.log(`captured ${img.width}x${img.height} -> ${png}`);
   if (!dec) console.log('no strip visible (open the T3 window in game, or send something)');
   else if (dec.error) console.log(`strip found but unreadable: ${dec.error} (cell ${dec.geo.cell}px at ${dec.geo.ox},${dec.geo.oy})`);
