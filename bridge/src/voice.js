@@ -1,6 +1,7 @@
 // Text-to-speech and dictation on the desktop side.
 //
-// Speech: a configured command, else speech-dispatcher (`spd-say`), else espeak-ng.
+// Speech: a configured command, else speech-dispatcher (`spd-say`), else espeak-ng,
+// else macOS's `say`.
 // Dictation: record the mic with pw-record and transcribe with `voxtype transcribe`;
 // the bridge sends the text to the addon. Without those, fall back to Omarchy's
 // `omarchy-dictation`, which pastes into the focused window.
@@ -44,6 +45,8 @@ export class Voice {
     if (spd) return { kind: 'spd', cmd: spd };
     const espeak = which('espeak-ng') || which('espeak');
     if (espeak) return { kind: 'espeak', cmd: espeak };
+    const say = process.platform === 'darwin' && which('say');
+    if (say) return { kind: 'say', cmd: say };
     return null;
   }
 
@@ -71,7 +74,7 @@ export class Voice {
     if (!text) return false;
     const engine = this.ttsEngine();
     if (!engine) {
-      this.log('speak: no text-to-speech engine found (install speech-dispatcher or espeak-ng, or set tts.command)');
+      this.log(`speak: no text-to-speech engine found (${process.platform === 'darwin' ? '/usr/bin/say is missing' : 'install speech-dispatcher or espeak-ng'}, or set tts.command)`);
       return false;
     }
     this.hush();
@@ -82,6 +85,12 @@ export class Voice {
     } else if (engine.kind === 'spd') {
       const args = ['--wait', '-e'];
       if (this.rate) args.push('-r', String(this.rate));
+      child = spawn(engine.cmd, args, { stdio: ['pipe', 'ignore', 'ignore'] });
+      child.stdin.end(text);
+    } else if (engine.kind === 'say') {
+      // Reads the text from stdin; -r is words per minute (the system default is ~175).
+      const args = ['-f', '-'];
+      if (this.rate) args.push('-r', String(175 + this.rate));
       child = spawn(engine.cmd, args, { stdio: ['pipe', 'ignore', 'ignore'] });
       child.stdin.end(text);
     } else {
