@@ -113,7 +113,7 @@ function macInstalls(system = '/') {
   const shared = sys('Users/Shared/Battle.net');
   try {
     const db = fs.readFileSync(path.join(shared, 'Agent/product.db'), 'latin1');
-    for (const m of db.matchAll(/\/[^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) add(path.join(system, m[0]));
+    for (const m of db.matchAll(/\/[^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) add(path.join(system, Buffer.from(m[0], 'latin1').toString('utf8')));
   } catch {}
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(home, 'Library/Application Support/Battle.net/Battle.net.config'), 'utf8'));

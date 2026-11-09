@@ -73,9 +73,9 @@ test("finds Forever on macOS from Battle.net's records and /Applications", () =>
   assert.deepEqual(mac().wowOnly, [path.join(sys, 'Applications/World of Warcraft')]);
 
   // An install on another volume, recorded by Battle.net.
-  touch(path.join(sys, 'Users/Shared/Battle.net/Agent/product.db'), 'junk\x00\x12"/Volumes/Games/World of Warcraft\x00wowf');
-  touch(path.join(sys, 'Volumes/Games/World of Warcraft/_forever_/World of Warcraft.app/Contents/Info.plist'));
-  assert.deepEqual(mac().forever, [path.join(sys, 'Volumes/Games/World of Warcraft/_forever_')]);
+  touch(path.join(sys, 'Users/Shared/Battle.net/Agent/product.db'), 'junk\x00\x12"/Volumes/Jeux Vidéo/World of Warcraft\x00wowf');
+  touch(path.join(sys, 'Volumes/Jeux Vidéo/World of Warcraft/_forever_/World of Warcraft.app/Contents/Info.plist'));
+  assert.deepEqual(mac().forever, [path.join(sys, 'Volumes/Jeux Vidéo/World of Warcraft/_forever_')]);
   fs.rmSync(sys, { recursive: true, force: true });
 });
 
