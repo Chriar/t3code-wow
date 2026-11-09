@@ -1,0 +1,11 @@
+name: Idea
+description: A specific improvement or new feature
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like, and why?
+      description: The problem it solves for you, and what you'd like to happen. Keep it short; one idea per issue.
+    validations:
+      required: true

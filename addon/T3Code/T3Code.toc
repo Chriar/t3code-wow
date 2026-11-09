@@ -1,0 +1,31 @@
+## Interface: 16001
+## Title: T3 Code
+## Notes: Watch and run your T3 Code agent threads from inside the game. Needs the t3code-wow bridge running on this computer.
+## Author: Ryan Hughes
+## Version: 0.1.0
+## X-License: MIT
+## X-Website: https://github.com/ryanrhughes/t3code-wow
+## IconTexture: Interface\AddOns\T3Code\Media\icon
+## SavedVariables: T3CodeDB
+## AddonCompartmentFunc: T3Code_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: T3Code_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: T3Code_OnAddonCompartmentLeave
+## OptionalDeps: Blizzard_ObjectiveTracker
+
+Core\Codec.lua
+Core\Crypto.lua
+Core\Init.lua
+Core\Transport.lua
+Core\Store.lua
+UI\Templates.xml
+UI\Widgets.lua
+UI\MainFrame.lua
+UI\ThreadList.lua
+UI\Transcript.lua
+UI\Usage.lua
+UI\Settings.lua
+UI\Tracker.lua
+UI\Toasts.lua
+UI\Minimap.lua
+UI\Gamepad.lua
+Core\Slash.lua

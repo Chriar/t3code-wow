@@ -1,0 +1,28 @@
+{
+  "name": "t3code-wow",
+  "version": "0.1.0",
+  "description": "Bridge between the T3 Code addon for World of Warcraft: Forever and a running T3 Code server. Early release, experimental.",
+  "homepage": "https://github.com/ryanrhughes/t3code-wow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryanrhughes/t3code-wow.git",
+    "directory": "bridge"
+  },
+  "bugs": {
+    "url": "https://github.com/ryanrhughes/t3code-wow/issues"
+  },
+  "author": "Ryan Hughes",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "t3code-wow": "bin/t3code-wow.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "start": "node bin/t3code-wow.js run"
+  },
+  "license": "MIT"
+}

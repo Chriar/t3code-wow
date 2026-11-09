@@ -1,0 +1,38 @@
+name: Bug
+description: Something that doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is an early, experimental release built for Omarchy 4.5.0, T3 Code Nightly and WoW: Forever. Detailed but straightforward reports help most: what happened, plainly, without an essay.
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Omarchy (`omarchy-version`), T3 Code Nightly (`t3 --version`), t3code-wow (`t3code-wow status`), and your controller if it's involved.
+      placeholder: e.g. Omarchy 4.5.0, t3 v0.1.7-nightly.20261102, t3code-wow 0.1.0, Xbox Series controller
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Steps to reproduce if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Output of `t3code-wow status --log`, and the text from `/t3 report` in game.
+      render: text
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshot or video
+      description: For anything you can see in game, drag in a screenshot or a short recording.
