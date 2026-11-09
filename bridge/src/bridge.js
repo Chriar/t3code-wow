@@ -159,6 +159,11 @@ export function proposedPlan(projection) {
   return plan ? plan.markdown : null;
 }
 
+// How the game names a model: instance and slug, joined by a tab (neither contains one).
+export function modelKey(instanceId, model) {
+  return `${instanceId}\t${model}`;
+}
+
 export function parseFrame(payload) {
   const records = payload.toString('utf8').split(RS).map((r) => r.split(US));
   const out = { hello: null, commands: [] };
@@ -175,6 +180,7 @@ export function parseFrame(payload) {
         view: f[8] || '',
         version: f[9] || '',
         slots: Number(f[10]) || 0,
+        models: f[11] || '',
       };
     } else if (f[0] === 'C') {
       out.commands.push({ id: Number(f[1]), verb: f[2], args: f.slice(3) });
@@ -399,6 +405,8 @@ export class Bridge {
     c.confirmedAt = Date.now();
     this.persist.confirmedSlot = hello.slot;
     c.version = hello.version;
+    // Which model list the addon holds; it's only sent again when this differs.
+    c.modelsHash = hello.models;
     c.lastSeen = Date.now();
     this.persist.slotGuess = c.slotNext;
 
@@ -448,12 +456,18 @@ export class Bridge {
           ok = null;
           break;
         case 'new': {
+          // new <project> <text> [<instanceId> <model>]
           const attachments = await this.takeShots('new', a0);
-          const res = await this.t3.launchThread(a0, a1, attachments);
+          const model = cmd.args[2] && cmd.args[3] ? { instanceId: cmd.args[2], model: cmd.args[3] } : undefined;
+          const res = await this.t3.launchThread(a0, a1, attachments, model ? { model } : {});
           msg = 'Thread started';
           if (res?.threadId) this.results.push({ id: cmd.id, ok: true, open: res.threadId });
           break;
         }
+        case 'model':
+          await this.t3.setModel(a0, a1, a2);
+          msg = 'Model changed';
+          break;
         case 'stop':
           await this.t3.interrupt(a0);
           msg = 'Stopped';
@@ -730,6 +744,7 @@ export class Bridge {
         un: s !== 'settled' && isUnread(t) ? true : undefined,
         br: t.branch ? escapeWow(t.branch) : undefined,
         m: t.modelSelection?.model,
+        mi: t.modelSelection?.instanceId,
         env: t._env && !t._env.local ? escapeWow(t._env.label) : undefined,
         last: last && ACTIVE.has(s) === false && s !== 'settled' ? escapeWow(firstLine(last, 160)) : undefined,
       };
@@ -738,11 +753,14 @@ export class Bridge {
       if (p.archivedAt) continue;
       const remote = p._env && !p._env.local ? p._env.label : null;
       const name = p.title || p.repositoryIdentity?.displayName || 'Project';
+      const dm = t3.defaultModelFor(p.id);
       projects.push({
         id: p.id,
         name: escapeWow(remote ? `${name} · ${remote}` : name),
         env: remote ? escapeWow(remote) : undefined,
         act: usedProjects.has(p.id) || undefined,
+        // The model a new thread here gets unless the player picks one.
+        dm: dm?.instanceId && dm.model ? modelKey(dm.instanceId, dm.model) : undefined,
       });
     }
     projects.sort((a, b) => (b.act ? 1 : 0) - (a.act ? 1 : 0) || a.name.localeCompare(b.name));
@@ -781,6 +799,8 @@ export class Bridge {
       }
     }
 
+    const models = this.modelsSection();
+
     const usage = [];
     this.omarchyUsage.refresh(this.usageInstances());
     const enabled = (t3.config?.providers || []).filter((p) => p.enabled && (p.usageLimits || this.omarchyUsage.forInstance(p.instanceId)));
@@ -807,8 +827,21 @@ export class Bridge {
       usage,
       dict: this.dictation,
       newShots: this.shots.get('new')?.length || undefined,
+      // ~100 models is several KB, so only when the addon doesn't hold this list yet.
+      models: models && this.client?.modelsHash !== models.h ? models : undefined,
       results: this.results.slice(-8).map(({ id, ok, msg, open }) => ({ id, ok, msg, open })),
     };
+  }
+
+  // Every machine's model list for the game's model picker, with a short hash the
+  // addon reports back in its hello.
+  modelsSection() {
+    const groups = this.t3
+      .modelGroups()
+      .filter((g) => g.choices.length)
+      .map((g) => ({ e: g.code, m: g.choices.map((c) => ({ i: c.instanceId, s: c.model, l: escapeWow(`${c.name} · ${c.provider}`) })) }));
+    if (!groups.length) return undefined;
+    return { h: createHash('sha1').update(JSON.stringify(groups)).digest('hex').slice(0, 8), g: groups };
   }
 
   // ---------------------------------------------------------------------------

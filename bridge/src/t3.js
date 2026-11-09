@@ -59,6 +59,44 @@ export function pickModelSelection({ project, settings = {}, threads = [], provi
   return (latest.find((t) => project && t.projectId === project.id) || latest[0])?.modelSelection || null;
 }
 
+// The models the game offers: every switched-on provider's current models, in T3's
+// order. Legacy models are left out to keep the list short; a thread already on one
+// still shows it.
+export function modelChoices(providers = []) {
+  const out = [];
+  for (const p of providers || []) {
+    if (!p?.enabled || !Array.isArray(p.models)) continue;
+    for (const m of p.models) {
+      if (!m?.slug || m.isLegacy) continue;
+      out.push({ instanceId: p.instanceId, model: m.slug, name: m.name || m.slug, provider: p.displayName || p.instanceId });
+    }
+  }
+  return out;
+}
+
+// A model the player picked in the game, as a full selection. Its options (reasoning
+// effort and the like) come from `candidates` (the selection T3 would have used, or
+// the thread's current one) when that is the same model, else from the latest thread
+// on it, so picking a model keeps what was last chosen for it in T3. With neither, T3
+// applies the model's defaults.
+export function chosenModelSelection({ instanceId, model }, { providers, candidates = [], threads = [] } = {}) {
+  if (!instanceId || !model) throw new Error('no model picked');
+  const provider = providers?.find((p) => p.instanceId === instanceId);
+  if (providers && !provider?.enabled) throw new Error(`${provider?.displayName || instanceId} is switched off in T3 Code. Pick another model.`);
+  if (Array.isArray(provider?.models) && !provider.models.some((m) => m.slug === model)) {
+    throw new Error(`${provider.displayName || instanceId} no longer offers ${model}. Pick another model.`);
+  }
+  const same = (sel) => sel?.instanceId === instanceId && sel?.model === model;
+  let options = candidates.find(same)?.options;
+  if (!options) {
+    const latest = threads
+      .filter((t) => !t.deletedAt && same(t.modelSelection))
+      .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))[0];
+    options = latest?.modelSelection.options;
+  }
+  return options ? { instanceId, model, options } : { instanceId, model };
+}
+
 export class T3Client extends EventEmitter {
   constructor({ tokenProvider, log = () => {}, originProvider = null, label = 'local' }) {
     super();
@@ -331,15 +369,23 @@ export class T3Client extends EventEmitter {
     });
   }
 
-  // opts: { title, runtimeMode ('full-access' | 'approval-required' | ...), interactionMode ('default' | 'plan') }
-  launchThread(projectId, text, attachments = [], opts = {}) {
-    const settings = this.config?.settings || {};
-    const modelSelection = pickModelSelection({
+  // The model a new thread in `projectId` gets when the player doesn't pick one.
+  defaultModelFor(projectId) {
+    return pickModelSelection({
       project: this.projects.get(projectId),
-      settings,
+      settings: this.config?.settings || {},
       threads: [...this.threads.values()],
       providers: this.config?.providers,
     });
+  }
+
+  // opts: { title, model ({ instanceId, model }), runtimeMode ('full-access' | 'approval-required' | ...), interactionMode ('default' | 'plan') }
+  launchThread(projectId, text, attachments = [], opts = {}) {
+    const settings = this.config?.settings || {};
+    const auto = this.defaultModelFor(projectId);
+    const modelSelection = opts.model
+      ? chosenModelSelection(opts.model, { providers: this.config?.providers, candidates: [auto], threads: [...this.threads.values()] })
+      : auto;
     if (!modelSelection) throw new Error('No model to start a thread with. Pick a default model in T3 Code settings, or start one thread there first.');
     const firstLine = text.split('\n')[0].trim();
     const title = firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine || 'New thread';
@@ -387,6 +433,17 @@ export class T3Client extends EventEmitter {
 
   respondAnswers(threadId, requestId, answers) {
     return this.dispatch({ type: 'runtime-request.respond', threadId, requestId, answers });
+  }
+
+  // Switch a thread to another model; T3 uses it from the next run on.
+  setModel(threadId, instanceId, model) {
+    const t = this.threads.get(threadId);
+    if (!t) throw new Error('that thread is gone');
+    const modelSelection = chosenModelSelection(
+      { instanceId, model },
+      { providers: this.config?.providers, candidates: [t.modelSelection], threads: [...this.threads.values()] },
+    );
+    return this.dispatch({ type: 'thread.model-selection.set', threadId, modelSelection });
   }
 
   settle(threadId) {
