@@ -395,10 +395,11 @@ function M:HeaderAction()
 	if not t then return end
 	if t.s == "settled" then
 		ns.Transport:Send("unsettle", t.id)
+		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 	else
 		ns.Transport:Send("settle", t.id)
+		PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 	end
-	PlaySound(SOUNDKIT.IG_QUEST_LOG_ABANDON_QUEST or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 end
 
 ---------------------------------------------------------------------------

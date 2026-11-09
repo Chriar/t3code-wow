@@ -359,3 +359,11 @@ test('schema errors from T3 Code read as a version mismatch', () => {
   assert.match(friendlyError('Missing key\n  at ["reason"]'), /didn't accept that request \(it wants "reason"\)/);
   assert.equal(friendlyError('nothing is running in that thread'), 'nothing is running in that thread');
 });
+
+test('a settled thread shows as settled even with an unreviewed plan', async () => {
+  const { threadStatus } = await import('../src/t3.js');
+  const t = { status: 'completed', hasActionableProposedPlan: true, settledOverride: 'settled' };
+  assert.equal(threadStatus(t), 'settled');
+  assert.equal(threadStatus({ ...t, settledOverride: null }), 'plan');
+  assert.equal(threadStatus({ ...t, pendingRuntimeRequest: { kind: 'user_input' } }), 'input');
+});

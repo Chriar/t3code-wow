@@ -30,9 +30,10 @@ const WORKING = new Set(['preparing', 'queued', 'starting', 'running', 'waiting'
 export function threadStatus(t) {
   if (t.archivedAt || t.deletedAt) return 'archived';
   if (t.pendingRuntimeRequest) return 'input';
-  if (t.hasActionableProposedPlan) return 'plan';
   if (t.activityRunStatus || WORKING.has(t.status)) return 'working';
+  // Settled wins over an unreviewed plan: settling is how you say you're done with it.
   if (t.settledOverride === 'settled') return 'settled';
+  if (t.hasActionableProposedPlan) return 'plan';
   if (t.status === 'failed' || t.lastError) return 'failed';
   return 'open';
 }
