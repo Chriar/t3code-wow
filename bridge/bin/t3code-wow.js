@@ -100,8 +100,19 @@ function quiet(cmd, args, { warn = true } = {}) {
   return r.status === 0;
 }
 
+// On macOS, the launch agent runs the `node` found on PATH, such as Homebrew's
+// /opt/homebrew/bin/node, rather than the versioned folder that link points to.
+// `brew upgrade node` deletes the old versioned folder, and the agent would then fail
+// to start at the next login.
 function bridgeCommand() {
-  return [process.execPath, path.join(BRIDGE_ROOT, 'bin', 't3code-wow.js'), 'run'];
+  const linked = (process.env.PATH || '').split(':').map((dir) => path.join(dir, 'node')).find((p) => {
+    try {
+      return fs.realpathSync(p) === process.execPath;
+    } catch {
+      return false;
+    }
+  });
+  return [(MAC && linked) || process.execPath, path.join(BRIDGE_ROOT, 'bin', 't3code-wow.js'), 'run'];
 }
 
 const xmlEscape = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
