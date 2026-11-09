@@ -170,8 +170,8 @@ const launchd = {
     ].join('\n'));
     // Reload so a changed plist (a new node path, say) takes effect.
     quiet('launchctl', ['bootout', `${this.target()}/${this.name}`], { warn: false });
-    if (!quiet('launchctl', ['bootstrap', this.target(), this.file])) {
-      // bootout can still be finishing; one retry covers it.
+    if (!quiet('launchctl', ['bootstrap', this.target(), this.file], { warn: false })) {
+      // bootout can still be finishing ("Bootstrap failed: 5"); only the retry's error is worth showing.
       spawnSync('sleep', ['1']);
       quiet('launchctl', ['bootstrap', this.target(), this.file]);
     }
