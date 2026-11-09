@@ -214,9 +214,10 @@ export function parseBMP(buf) {
   const bpp = buf.readUInt16LE(28);
   const compression = buf.readUInt32LE(30);
   if (bpp !== 24 && bpp !== 32) throw new Error(`unsupported bmp depth ${bpp}`);
-  // 0 = BI_RGB, 3 = BI_BITFIELDS (masks after the 40-byte header), 6 = BI_ALPHABITFIELDS.
-  let masks = bpp === 32 ? [0x00ff0000, 0x0000ff00, 0x000000ff] : null;
-  if (compression === 3 || compression === 6) {
+  // 0 = BI_RGB, 3 = BI_BITFIELDS (masks after the 40-byte header). A 24-bit pixel reads
+  // like a 32-bit one without its top byte, so both depths use the same masks.
+  let masks = [0x00ff0000, 0x0000ff00, 0x000000ff];
+  if (compression === 3) {
     if (bpp !== 32) throw new Error('unsupported bmp bitfields');
     masks = [buf.readUInt32LE(54), buf.readUInt32LE(58), buf.readUInt32LE(62)];
   } else if (compression !== 0) {
@@ -225,21 +226,15 @@ export function parseBMP(buf) {
   const height = Math.abs(rawHeight);
   const topDown = rawHeight < 0;
   const stride = Math.ceil((width * bpp) / 32) * 4;
-  const shifts = masks?.map((m) => (m ? 31 - Math.clz32(m & -m) : 0));
+  const bytes = bpp / 8;
+  const shifts = masks.map((m) => 31 - Math.clz32(m & -m));
   const data = Buffer.alloc(width * height * 3);
   for (let y = 0; y < height; y++) {
     const row = dataOffset + (topDown ? y : height - 1 - y) * stride;
     for (let x = 0; x < width; x++) {
       const o = (y * width + x) * 3;
-      if (bpp === 24) {
-        const p = row + x * 3;
-        data[o] = buf[p + 2];
-        data[o + 1] = buf[p + 1];
-        data[o + 2] = buf[p];
-      } else {
-        const v = buf.readUInt32LE(row + x * 4);
-        for (let c = 0; c < 3; c++) data[o + c] = ((v & masks[c]) >>> shifts[c]) & 0xff;
-      }
+      const v = buf.readUIntLE(row + x * bytes, bytes);
+      for (let c = 0; c < 3; c++) data[o + c] = ((v & masks[c]) >>> shifts[c]) & 0xff;
     }
   }
   return { width, height, data };
