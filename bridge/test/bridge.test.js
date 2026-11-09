@@ -152,7 +152,7 @@ test('the model list is only sent while the addon reports a different one', () =
   b.t3.local.client.config = {
     providers: [
       { instanceId: 'codex', displayName: 'Codex', enabled: true, models: [{ slug: 'a', name: 'A | B', ...levels('low', 'high') }, { slug: 'b', name: 'B', ...levels('low', 'high') }, { slug: 'n', name: 'N' }] },
-      { instanceId: 'claude', displayName: 'Claude', enabled: true, models: [{ slug: 'o', name: 'O', ...levels('low', 'max') }] },
+      { instanceId: 'claude', displayName: 'Claude  Harness', enabled: true, models: [{ slug: 'o', name: 'O', ...levels('low', 'max') }] },
     ],
   };
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0', '8']]));
@@ -160,7 +160,7 @@ test('the model list is only sent while the addon reports a different one', () =
   assert.equal(first.g[0].e, '');
   assert.deepEqual(first.g[0].p, [
     { i: 'codex', n: 'Codex', m: [{ s: 'a', l: 'A || B', r: 1 }, { s: 'b', l: 'B', r: 1 }, { s: 'n', l: 'N', r: undefined }] },
-    { i: 'claude', n: 'Claude', m: [{ s: 'o', l: 'O', r: 2 }] },
+    { i: 'claude', n: 'Claude Harness', m: [{ s: 'o', l: 'O', r: 2 }] },
   ], 'grouped by provider; models with the same levels share a set');
   assert.deepEqual(first.g[0].x, [
     { k: 'effort', d: 'high', o: [{ i: 'low', l: 'LOW' }, { i: 'high', l: 'HIGH' }] },

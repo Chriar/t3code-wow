@@ -860,7 +860,7 @@ export class Bridge {
             if (!sets.has(key)) sets.set(key, x.push(set));
             r = sets.get(key);
           }
-          if (!providers.has(c.instanceId)) providers.set(c.instanceId, { i: c.instanceId, n: escapeWow(c.provider), m: [] });
+          if (!providers.has(c.instanceId)) providers.set(c.instanceId, { i: c.instanceId, n: escapeWow(c.provider.replace(/\s+/g, ' ').trim()), m: [] });
           providers.get(c.instanceId).m.push({ s: c.model, l: escapeWow(c.name), r });
         }
         return { e: g.code, x, p: [...providers.values()] };

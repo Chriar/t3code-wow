@@ -619,7 +619,7 @@ function M:Refresh()
 	local t = ns.Store:Thread(ns.viewId)
 	if self.mode == "new" then
 		f.Subtitle:SetText("New Thread")
-		header.Text:SetText(ns.Color("gold", "Start a new thread in"))
+		header.Text:SetText(ns.Color("gold", "New thread in"))
 		header.Action:Hide()
 		header.Archive:Hide()
 		header.Project:Show()
@@ -745,6 +745,9 @@ function M:SetupModelDropdown()
 	end
 	dd.value = current
 	dd:SetOptions(options)
+	-- Wide enough for "Model · Provider" where it fits, so the provider isn't cut off.
+	local textW = dd.Text:GetUnboundedStringWidth() or 0
+	dd:SetWidth(math.min(self.mode == "new" and 200 or 220, math.max(150, math.ceil(textW) + 40)))
 	dd:Show()
 	return true
 end
