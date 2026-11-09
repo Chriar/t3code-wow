@@ -90,7 +90,7 @@ C  id  verb  args…                      (one per queued command)
   - `s`: sound signals unavailable
 - Verbs:
   - `send`, `new`, `stop`
-  - `model` (`threadId instanceId model`). `new` takes the same `instanceId model` after its text; without them T3 Code's own default applies
+  - `model` (`threadId instanceId model [effort]`). `new` takes the same `instanceId model [effort]` after its text; without a model T3 Code's own default applies, and an empty `instanceId model` with an `effort` sets only the reasoning level on that default. `effort` is a level id from the model's list (`low`, `high`, …); without it the thread keeps the options last used with that model
   - `settle`, `unsettle`, `archive`, `read`
   - `approve`, `answer`
   - `speak`, `say`, `hush`, `dictate`
@@ -129,6 +129,7 @@ A publish works like this:
 1. Build the snapshot: threads, projects, the viewed thread's messages, pending
    question or approval, usage, bridge status, command results and the ack. The
    model list rides along only when the addon's `modelsHash` is out of date.
+   It is grouped per machine and provider, and each model points at one of a few shared sets of reasoning levels instead of carrying its own. Threads carry their reasoning level (`re`), projects the level their default model uses (`de`).
 2. Write it to the slots the addon will load next (from its last confirmed position
    to a little past the bridge's prediction) and to slots 1–3 (what a `/reload`
    bootstraps from).
