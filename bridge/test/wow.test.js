@@ -87,6 +87,6 @@ test('picks the Forever client out of macOS ps output', () => {
   ].join('\n');
   const p = parseMacProcesses(ps);
   assert.equal(p.pid, 4242);
-  assert.equal(p.startTicks, Date.parse('Mon Nov  9 09:27:45 2026'));
+  assert.equal(p.startTicks, Date.UTC(2026, 10, 9, 9, 27, 45));
   assert.equal(parseMacProcesses(ps.split('\n').slice(0, 2).join('\n')), null);
 });

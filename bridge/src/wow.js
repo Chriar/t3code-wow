@@ -175,17 +175,19 @@ export function findWowProcess() {
 }
 
 // `ps -axww -o pid=,lstart=,comm=` lines: "  123 Mon Nov  9 09:27:45 2026     /path/to/exe".
+// The start time is in UTC (findMacProcess runs ps with TZ=UTC), so a change of time
+// zone while the game runs doesn't look like a new client.
 export function parseMacProcesses(text) {
   for (const line of text.split('\n')) {
     const m = /^\s*(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line);
     if (!m || !/\/_forever_\/[^/]+\.app\/Contents\/MacOS\//.test(m[3])) continue;
-    return { pid: Number(m[1]), startTicks: Date.parse(m[2]) || 0 };
+    return { pid: Number(m[1]), startTicks: Date.parse(`${m[2]} GMT`) };
   }
   return null;
 }
 
 function findMacProcess() {
-  const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C' } });
+  const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
   return r.status === 0 ? parseMacProcesses(r.stdout) : null;
 }
 
