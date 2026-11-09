@@ -104,6 +104,7 @@ do
 	data.gen = data.gen + 1
 	check(hdr.Model:IsShown(), "the list comes back")
 end
+check(ns.Main:ChosenNewModel() == nil and ns.Main:NewThreadModel() ~= nil, "no pick yet: the picker shows T3's default but sends none")
 local pick = hdr.Model.options[#hdr.Model.options]
 ns.Main:PickModel(pick.value)
 check(ns.db.models[ns.Main.newProject] == pick.value and ns.Main:NewThreadModel() == pick.value, "picked model remembered for the project: " .. pick.label)

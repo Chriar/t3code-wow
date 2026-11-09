@@ -436,7 +436,7 @@ function M:Send(textOverride)
 			return
 		end
 		ns.db.settings.lastProject = self.newProject
-		local instanceId, slug = ns.Store.SplitModelKey(self:NewThreadModel())
+		local instanceId, slug = ns.Store.SplitModelKey(self:ChosenNewModel())
 		self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
 		self.pendingNewText = text
 		ns.db.drafts.__new = nil
@@ -673,11 +673,19 @@ end
 
 -- The model a new thread starts on: what was last picked for this project, else what
 -- T3 would choose for it, else the top of the list.
-function M:NewThreadModel()
+-- The model the player picked for the new thread, now or last time in this project.
+-- Nil means T3 Code picks when the thread starts.
+function M:ChosenNewModel()
 	if self.newModel then return self.newModel end
-	local env = ns.Store.EnvOf(self.newProject)
 	local saved = self.newProject and ns.db.models[self.newProject]
-	if ns.Store:Offers(env, saved) then return saved end
+	if ns.Store:Offers(ns.Store.EnvOf(self.newProject), saved) then return saved end
+end
+
+-- What the picker shows: the chosen model, else T3 Code's default for the project.
+function M:NewThreadModel()
+	local chosen = self:ChosenNewModel()
+	if chosen then return chosen end
+	local env = ns.Store.EnvOf(self.newProject)
 	local p = ns.Store.projectsById[self.newProject or ""]
 	if p and p.dm then return p.dm end
 	local options = ns.Store:ModelOptions(env)
