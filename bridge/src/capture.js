@@ -318,21 +318,19 @@ export class StripCapture {
     const name = `wow-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
     if (backend === 'macos') {
       const win = await this.macWindow(wowPid);
-      const rect = win?.found ? [win.x, win.y, win.width, win.height] : null;
-      if (!rect) throw new Error('the game window is not on screen');
+      // screencapture copies a rectangle of the screen, so a hidden game would attach
+      // whatever is showing there instead.
+      if (!win.visible) throw new Error("the game window isn't on screen");
+      let data = await this.macCapture([win.x, win.y, win.width, win.height], 'jpg', 'shot.jpg');
       // Retina captures come back at twice the size; keep them at the logical size.
-      const file = this.tmpFile(name);
-      const data = await this.macCapture(rect, 'jpg', 'shot.jpg');
       if (win.scale > 1) {
+        const file = this.tmpFile(name);
         fs.writeFileSync(file, data);
         try {
           await run('sips', ['-Z', String(Math.round(Math.max(win.width, win.height))), file], { timeout: 8000 });
-          return { data: fs.readFileSync(file), name, mime: 'image/jpeg' };
-        } catch {
-          return { data, name, mime: 'image/jpeg' };
-        } finally {
-          fs.rmSync(file, { force: true });
-        }
+          data = fs.readFileSync(file);
+        } catch {}
+        fs.rmSync(file, { force: true });
       }
       return { data, name, mime: 'image/jpeg' };
     }
