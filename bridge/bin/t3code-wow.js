@@ -256,10 +256,7 @@ async function cmdInstall(args) {
       return;
     }
     console.log(`${C.g('✓')} Bridge running as the ${service.name} ${service.kind}`);
-    if (MAC) {
-      console.log(`${C.y('!')} The bridge reads the game's pixels, so macOS asks for Screen Recording permission the first time.`);
-      console.log(C.d(`  If it doesn't ask, or the link stays down: System Settings > Privacy & Security > Screen & System Audio Recording,\n  turn on ${path.basename(process.execPath)} (${process.execPath}).`));
-    }
+    if (MAC) console.log(`${C.y('!')} The bridge reads the game's pixels, so macOS asks for Screen Recording permission the first time.`);
   }
 
   console.log('');
@@ -303,12 +300,12 @@ async function firstLaunch({ restart, running, waiting, since }) {
         connected = st;
         break;
       }
-      const blocked = MAC && st?.capture?.state === 'error' && st.capture.lastError === SCREEN_PERMISSION_HELP;
+      const blocked = st?.capture?.state === 'error' && st.capture.lastError === SCREEN_PERMISSION_HELP;
       const msg = blocked
         ? 'Waiting for Screen Recording permission (see above)… (Enter to skip)'
         : st?.wow ? 'World of Warcraft is running. Waiting for you to log in… (Enter to skip)' : 'Waiting for World of Warcraft to start… (Enter to skip)';
-      if (blocked && !shown.startsWith('Waiting for Screen')) process.stdout.write(`\r\x1b[2K${C.y(SCREEN_PERMISSION_HELP)}\n`);
       if (msg !== shown) {
+        if (blocked) process.stdout.write(`\r\x1b[2K${C.y(SCREEN_PERMISSION_HELP)}\n`);
         process.stdout.write(`\r\x1b[2K${C.d(msg)}`);
         shown = msg;
       }
