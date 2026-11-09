@@ -1,9 +1,9 @@
 # Architecture
 
 ```
- WoW: Forever (Wine)                                   t3code-wow bridge (Node, user service)
+ WoW: Forever (Wine or macOS)                          t3code-wow bridge (Node, user service)
  ┌──────────────────────────────┐   pixels   ┌────────────────────────────────────────┐
- │ T3Code addon                 │──────────▶│ capture.js  grim / import, decode strip │
+ │ T3Code addon                 │──────────▶│ capture.js  grim / screencapture, strip │
  │  Transport.lua  strip, queue │            │ bridge.js   commands, pacing, snapshots │
  │  Store.lua      snapshot     │◀──────────│ slots.js    Inbox.lua into T3Code_S###  │
  │  UI/*           window,      │   files    │             Signals/NNNNN.wav           │
@@ -99,6 +99,8 @@ change such as opening the window or switching threads, or a queued command. It 
 redrawn when content changes and hidden as soon as a snapshot acknowledges its
 sequence number, usually in under a second. If nothing answers for 20 s, it hides and
 retries with backoff.
+
+**macOS.** The bridge finds the game window in CoreGraphics' window list (through a JXA script run by `osascript`, so there's nothing to compile) and captures the corner with `screencapture -R`, which returns physical pixels on a Retina display. A windowed game has a title bar above the strip, so the decoder searches 40 extra points down instead of guessing its height. Both tools run as the bridge, which needs the Screen Recording permission; the bridge asks for it when it starts.
 
 ## Bridge → game: slots and signals
 
