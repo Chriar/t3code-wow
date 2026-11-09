@@ -347,10 +347,10 @@ async function cmdUninstall(args) {
   const warn = (msg) => console.log(`${C.y('!')} ${msg}`);
 
   if (fs.existsSync(UNIT_FILE)) {
-    systemctl('disable', '--now', UNIT_NAME);
+    spawnSync('systemctl', ['--user', 'disable', '--now', UNIT_NAME], { stdio: 'ignore' });
     fs.rmSync(UNIT_FILE);
-    systemctl('daemon-reload');
-    done(`Stopped and removed the ${UNIT_NAME} service`);
+    spawnSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'ignore' });
+    done('Stopped and removed the bridge service');
   }
 
   let wowDir = cfg.wowDir;
