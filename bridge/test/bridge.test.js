@@ -134,27 +134,43 @@ test('commands run once, in order, and results are published', async () => {
 test('a picked model rides along with new, and model switches a thread', async () => {
   const { b, calls } = fakeBridge();
   b.t3.setModel = async (...a) => calls.push(['model', ...a]);
-  b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', 't1', '0.1.0'], ['C', 1, 'new', 'p1', 'go', 'codex', 'gpt-x'], ['C', 2, 'new', 'p1', 'auto'], ['C', 3, 'model', 't1', 'codex', 'gpt-y']]));
+  b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', 't1', '0.1.0'], ['C', 1, 'new', 'p1', 'go', 'codex', 'gpt-x'], ['C', 2, 'new', 'p1', 'auto'], ['C', 3, 'model', 't1', 'codex', 'gpt-y'], ['C', 4, 'new', 'p1', 'hard', '', '', 'high'], ['C', 5, 'model', 't1', 'codex', 'gpt-y', 'low']]));
   await new Promise((r) => setTimeout(r, 20));
   const news = calls.filter((c) => c[0] === 'new');
   assert.deepEqual(news.find((c) => c[2] === 'go')[4], { model: { instanceId: 'codex', model: 'gpt-x' } });
   assert.deepEqual(news.find((c) => c[2] === 'auto')[4], {}, 'no pick: T3 picks as before');
-  assert.deepEqual(calls.find((c) => c[0] === 'model'), ['model', 't1', 'codex', 'gpt-y']);
+  assert.deepEqual(news.find((c) => c[2] === 'hard')[4], { effort: 'high' }, 'only a level picked: on the default model');
+  const models = calls.filter((c) => c[0] === 'model');
+  assert.deepEqual(models[0], ['model', 't1', 'codex', 'gpt-y', undefined]);
+  assert.deepEqual(models[1], ['model', 't1', 'codex', 'gpt-y', 'low']);
   b.stop();
 });
 
 test('the model list is only sent while the addon reports a different one', () => {
   const { b } = fakeBridge();
-  b.t3.local.client.config = { providers: [{ instanceId: 'codex', displayName: 'Codex', enabled: true, models: [{ slug: 'a', name: 'A | B' }] }] };
+  const levels = (...ids) => ({ capabilities: { optionDescriptors: [{ id: 'effort', type: 'select', options: ids.map((id, n) => ({ id, label: id.toUpperCase(), isDefault: n === 1 })) }] } });
+  b.t3.local.client.config = {
+    providers: [
+      { instanceId: 'codex', displayName: 'Codex', enabled: true, models: [{ slug: 'a', name: 'A | B', ...levels('low', 'high') }, { slug: 'b', name: 'B', ...levels('low', 'high') }, { slug: 'n', name: 'N' }] },
+      { instanceId: 'claude', displayName: 'Claude', enabled: true, models: [{ slug: 'o', name: 'O', ...levels('low', 'max') }] },
+    ],
+  };
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0', '8']]));
   const first = b.buildSnapshot().models;
   assert.equal(first.g[0].e, '');
-  assert.deepEqual(first.g[0].m, [{ i: 'codex', s: 'a', l: 'A || B · Codex' }]);
+  assert.deepEqual(first.g[0].p, [
+    { i: 'codex', n: 'Codex', m: [{ s: 'a', l: 'A || B', r: 1 }, { s: 'b', l: 'B', r: 1 }, { s: 'n', l: 'N', r: undefined }] },
+    { i: 'claude', n: 'Claude', m: [{ s: 'o', l: 'O', r: 2 }] },
+  ], 'grouped by provider; models with the same levels share a set');
+  assert.deepEqual(first.g[0].x, [
+    { k: 'effort', d: 'high', o: [{ i: 'low', l: 'LOW' }, { i: 'high', l: 'HIGH' }] },
+    { k: 'effort', d: 'max', o: [{ i: 'low', l: 'LOW' }, { i: 'max', l: 'MAX' }] },
+  ]);
   b.onFrame(frame(2, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0', '8', first.h]]));
   assert.equal(b.buildSnapshot().models, undefined, 'the addon has this list');
   b.t3.local.client.config.providers[0].models.push({ slug: 'c', name: 'C' });
   assert.ok(b.buildSnapshot().models, 'a changed list goes out again');
-  b.t3.local.client.config.providers[0].enabled = false;
+  for (const p of b.t3.local.client.config.providers) p.enabled = false;
   assert.deepEqual(b.buildSnapshot().models.g, [], 'switching off the last provider clears the list');
   b.stop();
 });

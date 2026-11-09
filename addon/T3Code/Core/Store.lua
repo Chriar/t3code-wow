@@ -33,9 +33,17 @@ function Store:Apply(data)
 	self.data, self.byId, self.projectsById = data, byId, projectsById
 	self.applied = self.applied + 1
 	if type(data.models) == "table" and type(data.models.g) == "table" then
+		-- Flattened per machine, in T3's order: { i, s, l, p = provider, r = levels }.
 		local models = {}
 		for _, g in ipairs(data.models.g) do
-			if type(g.m) == "table" then models[g.e or ""] = g.m end
+			local list = {}
+			for _, p in ipairs(type(g.p) == "table" and g.p or {}) do
+				for _, m in ipairs(type(p.m) == "table" and p.m or {}) do
+					local levels = m.r and g.x and g.x[m.r]
+					table.insert(list, { i = p.i, s = m.s, l = m.l, p = p.n or p.i, r = type(levels) == "table" and levels or nil })
+				end
+			end
+			models[g.e or ""] = list
 		end
 		self.models, self.modelsHash = models, tostring(data.models.h or "")
 	end
@@ -113,53 +121,93 @@ function Store.EnvOf(id)
 	return id and id:match("^([^~]+)~") or ""
 end
 
+local function Find(self, env, key)
+	if not key then return nil end
+	for _, m in ipairs(self.models[env or ""] or {}) do
+		if Store.ModelKey(m.i, m.s) == key then return m end
+	end
+end
+
 function Store:Offers(env, key)
-	if not key then return false end
-	for _, m in ipairs(self.models[env or ""] or {}) do
-		if Store.ModelKey(m.i, m.s) == key then return true end
-	end
-	return false
+	return Find(self, env, key) ~= nil
 end
 
-function Store:ModelLabel(env, key)
-	for _, m in ipairs(self.models[env or ""] or {}) do
-		if Store.ModelKey(m.i, m.s) == key then return m.l end
-	end
-	local _, slug = Store.SplitModelKey(key)
-	return slug
+local DIM = "|cff9d9d9d"
+
+-- "Name · Provider", with the provider dimmed when `dim` is set.
+function Store:ModelLabel(env, key, dim)
+	local m = Find(self, env, key)
+	if not m then return select(2, Store.SplitModelKey(key)) end
+	if dim then return m.l .. DIM .. " · " .. m.p .. "|r" end
+	return m.l .. " · " .. m.p
 end
 
--- Choices for a model picker on machine `env`: the models its latest threads used
--- come first (a short reach on a controller), then the rest in T3's order. `current`
--- is listed even when it's no longer offered (a legacy model, say).
+-- Choices for a model picker on machine `env`, in groups under header rows: the
+-- models its latest threads used first (a short reach on a controller), then each
+-- provider's models in T3's order. `current` is listed even when it's no longer
+-- offered (a legacy model, say). Rows inside a provider group show just the model;
+-- the button always shows the provider too.
 function Store:ModelOptions(env, current)
 	local list = self.models[env or ""]
 	if not list or #list == 0 then return nil end
-	local labels = {}
-	for _, m in ipairs(list) do labels[Store.ModelKey(m.i, m.s)] = m.l end
-	local options, seen = {}, {}
-	local function add(key, label)
-		if not key or not label or seen[key] then return end
-		seen[key] = true
-		table.insert(options, { value = key, label = label })
+	local options = {}
+	local function item(m, group, withProvider)
+		local key = Store.ModelKey(m.i, m.s)
+		local text = m.l .. DIM .. " · " .. m.p .. "|r"
+		table.insert(options, { value = key, label = withProvider and text or m.l, text = text, group = group })
 	end
-	if current and not labels[current] then add(current, select(2, Store.SplitModelKey(current))) end
-	local recent = {}
+	local recent, seen = {}, {}
+	if current and not Find(self, env, current) then
+		local slug = select(2, Store.SplitModelKey(current))
+		table.insert(recent, { value = current, label = slug, text = slug, group = "Recent" })
+	end
+	local byRecent = {}
 	for _, t in ipairs(self.data.threads) do
-		if t.mi and t.m and Store.EnvOf(t.id) == (env or "") then table.insert(recent, t) end
+		if t.mi and t.m and Store.EnvOf(t.id) == (env or "") then table.insert(byRecent, t) end
 	end
-	table.sort(recent, function(a, b) return (a.st or a.u or 0) > (b.st or b.u or 0) end)
-	local recents = 0
-	for _, t in ipairs(recent) do
-		if recents >= 4 then break end
+	table.sort(byRecent, function(a, b) return (a.st or a.u or 0) > (b.st or b.u or 0) end)
+	local recentModels = {}
+	for _, t in ipairs(byRecent) do
+		if #recentModels >= 4 then break end
 		local key = Store.ModelKey(t.mi, t.m)
-		if labels[key] and not seen[key] then
-			add(key, labels[key])
-			recents = recents + 1
+		local m = Find(self, env, key)
+		if m and not seen[key] then
+			seen[key] = true
+			table.insert(recentModels, m)
 		end
 	end
-	for _, m in ipairs(list) do add(Store.ModelKey(m.i, m.s), m.l) end
+	if #recent + #recentModels > 0 then
+		table.insert(options, { header = true, label = "Recent" })
+		for _, o in ipairs(recent) do table.insert(options, o) end
+		for _, m in ipairs(recentModels) do item(m, "Recent", true) end
+	end
+	local provider
+	for _, m in ipairs(list) do
+		if m.p ~= provider then
+			provider = m.p
+			table.insert(options, { header = true, label = provider })
+		end
+		item(m, provider, false)
+	end
 	return options
+end
+
+-- A model's reasoning levels as picker choices, plus the one T3 uses by default.
+-- nil when the model has none.
+function Store:EffortOptions(env, key)
+	local m = Find(self, env, key)
+	local levels = m and m.r
+	if not levels or type(levels.o) ~= "table" or #levels.o == 0 then return nil end
+	local options = {}
+	for _, o in ipairs(levels.o) do table.insert(options, { value = o.i, label = o.l or o.i }) end
+	return options, levels.d
+end
+
+function Store.HasOption(options, value)
+	for _, o in ipairs(options or {}) do
+		if not o.header and o.value == value then return true end
+	end
+	return false
 end
 
 function Store:View()

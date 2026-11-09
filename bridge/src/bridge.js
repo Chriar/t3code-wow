@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { RS, US } from './codec.js';
 import { StripCapture } from './capture.js';
 import { SlotBank } from './slots.js';
-import { threadStatus, isUnread } from './t3.js';
+import { threadStatus, isUnread, effortOf } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
 import { Voice } from './voice.js';
@@ -456,16 +456,21 @@ export class Bridge {
           ok = null;
           break;
         case 'new': {
-          // new <project> <text> [<instanceId> <model>]
+          // new <project> <text> [<instanceId> <model> [<effort>]]; the model is
+          // empty when only the reasoning level was picked.
           const attachments = await this.takeShots('new', a0);
-          const model = cmd.args[2] && cmd.args[3] ? { instanceId: cmd.args[2], model: cmd.args[3] } : undefined;
-          const res = await this.t3.launchThread(a0, a1, attachments, model ? { model } : {});
+          const [, , instanceId, model, effort] = cmd.args;
+          const opts = {};
+          if (instanceId && model) opts.model = { instanceId, model };
+          if (effort) opts.effort = effort;
+          const res = await this.t3.launchThread(a0, a1, attachments, opts);
           msg = 'Thread started';
           if (res?.threadId) this.results.push({ id: cmd.id, ok: true, open: res.threadId });
           break;
         }
         case 'model':
-          await this.t3.setModel(a0, a1, a2);
+          // model <thread> <instanceId> <model> [<effort>]
+          await this.t3.setModel(a0, a1, a2, cmd.args[3] || undefined);
           msg = 'Model changed';
           break;
         case 'stop':
@@ -745,6 +750,7 @@ export class Bridge {
         br: t.branch ? escapeWow(t.branch) : undefined,
         m: t.modelSelection?.model,
         mi: t.modelSelection?.instanceId,
+        re: effortOf(t.modelSelection),
         env: t._env && !t._env.local ? escapeWow(t._env.label) : undefined,
         last: last && ACTIVE.has(s) === false && s !== 'settled' ? escapeWow(firstLine(last, 160)) : undefined,
       };
@@ -761,6 +767,7 @@ export class Bridge {
         act: usedProjects.has(p.id) || undefined,
         // The model a new thread here gets unless the player picks one.
         dm: dm?.instanceId && dm.model ? modelKey(dm.instanceId, dm.model) : undefined,
+        de: effortOf(dm),
       });
     }
     projects.sort((a, b) => (b.act ? 1 : 0) - (a.act ? 1 : 0) || a.name.localeCompare(b.name));
@@ -834,12 +841,30 @@ export class Bridge {
   }
 
   // Every machine's model list for the game's model picker, with a short hash the
-  // addon reports back in its hello.
+  // addon reports back in its hello. Per machine (`e`): its providers (`p`), each
+  // with its models, and the distinct sets of reasoning levels (`x`) those models
+  // point at by 1-based index (`r`), since most models of a provider share one.
   modelsSection() {
     const groups = this.t3
       .modelGroups()
       .filter((g) => g.choices.length)
-      .map((g) => ({ e: g.code, m: g.choices.map((c) => ({ i: c.instanceId, s: c.model, l: escapeWow(`${c.name} · ${c.provider}`) })) }));
+      .map((g) => {
+        const x = [];
+        const sets = new Map();
+        const providers = new Map();
+        for (const c of g.choices) {
+          let r;
+          if (c.effort) {
+            const set = { k: c.effort.id, d: c.effort.default, o: c.effort.options.map((o) => ({ i: o.id, l: escapeWow(o.label) })) };
+            const key = JSON.stringify(set);
+            if (!sets.has(key)) sets.set(key, x.push(set));
+            r = sets.get(key);
+          }
+          if (!providers.has(c.instanceId)) providers.set(c.instanceId, { i: c.instanceId, n: escapeWow(c.provider), m: [] });
+          providers.get(c.instanceId).m.push({ s: c.model, l: escapeWow(c.name), r });
+        }
+        return { e: g.code, x, p: [...providers.values()] };
+      });
     // An empty list still gets a hash, so the addon drops models that are gone.
     return { h: createHash('sha1').update(JSON.stringify(groups)).digest('hex').slice(0, 8), g: groups };
   }

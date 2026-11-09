@@ -202,9 +202,9 @@ export class Fleet extends EventEmitter {
     return env.client.visit(id);
   }
 
-  setModel(key, instanceId, model) {
+  setModel(key, instanceId, model, effort) {
     const { env, id } = this.split(key);
-    return env.client.setModel(id, instanceId, model);
+    return env.client.setModel(id, instanceId, model, effort);
   }
 
   defaultModelFor(projectKey) {

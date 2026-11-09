@@ -177,9 +177,9 @@ function M:CreateThreadsPage(page)
 	header.Archive:SetPoint("RIGHT", header.Action, "LEFT", -4, 0)
 	header.Archive:Hide()
 	UI.Tooltip(header.Archive, "Archive", "Hide this thread from the list (it stays in T3 Code's archive).")
-	header.Project = UI.Dropdown(header, 190, function(value)
+	header.Project = UI.Dropdown(header, 176, function(value)
 		M.newProject = value
-		M.newModel = nil
+		M.newModel, M.newEffort = nil, nil
 		M:Refresh()
 	end)
 	header.Project:SetPoint("RIGHT", -6, 0)
@@ -187,11 +187,17 @@ function M:CreateThreadsPage(page)
 	-- The model: for the new thread, or the open thread's next runs. Only a deliberate
 	-- pick from the list changes it (no wheel or right-click stepping), because each
 	-- change on a thread is a command to T3.
-	header.Model = UI.Dropdown(header, 190, function(value) M:PickModel(value) end)
-	header.Model:SetScript("OnClick", function(self) UI.OpenList(self) end)
-	header.Model:EnableMouseWheel(false)
-	header.Model:SetScript("OnMouseWheel", nil)
-	header.Model:Hide()
+	local function ListOnly(dd)
+		dd:SetScript("OnClick", function(self) UI.OpenList(self) end)
+		dd:EnableMouseWheel(false)
+		dd:SetScript("OnMouseWheel", nil)
+		dd:Hide()
+		return dd
+	end
+	header.Model = ListOnly(UI.Dropdown(header, 176, function(value) M:PickModel(value) end))
+	header.Model.listWidth = 300 -- room for "Model · Provider" rows
+	-- How hard the model reasons, when it has levels to pick from.
+	header.Effort = ListOnly(UI.Dropdown(header, 92, function(value) M:PickEffort(value) end))
 	right.Header = header
 
 	local composer = UI.Inset(right)
@@ -386,7 +392,7 @@ function M:StartNewThread(projectId)
 	self:Create()
 	self:SaveDraft()
 	self.mode = "new"
-	self.newModel = nil
+	self.newModel, self.newEffort = nil, nil
 	local filter = ns.db.settings.project
 	self.newProject = projectId or (filter ~= "all" and filter) or ns.db.settings.lastProject
 	if not ns.Store.projectsById[self.newProject or ""] then
@@ -437,7 +443,13 @@ function M:Send(textOverride)
 		end
 		ns.db.settings.lastProject = self.newProject
 		local instanceId, slug = ns.Store.SplitModelKey(self:ChosenNewModel())
-		self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
+		local effort = self:ChosenNewEffort()
+		if effort then
+			-- An empty model means T3 Code's default, at this level.
+			self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId or "", slug or "", effort)
+		else
+			self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
+		end
 		self.pendingNewText = text
 		ns.db.drafts.__new = nil
 	elseif ns.viewId and not textOverride and ns.Transcript:CustomAnswer(text) then
@@ -613,9 +625,13 @@ function M:Refresh()
 		header.Project:Show()
 		self:SetupProjectDropdown()
 		local withModel = self:SetupModelDropdown()
+		local withEffort = withModel and self:SetupEffortDropdown()
 		header.Model.tipBody = "The model the new thread starts on. It's remembered for this project."
+		header.Effort.tipBody = "How hard the model reasons on the new thread. It's remembered for this project."
+		header.Effort:ClearAllPoints()
+		header.Effort:SetPoint("RIGHT", -6, 0)
 		header.Model:ClearAllPoints()
-		header.Model:SetPoint("RIGHT", -6, 0)
+		header.Model:SetPoint("RIGHT", withEffort and header.Effort or header, withEffort and "LEFT" or "RIGHT", withEffort and -4 or -6, 0)
 		header.Project:ClearAllPoints()
 		if withModel then
 			header.Project:SetPoint("RIGHT", header.Model, "LEFT", -6, 0)
@@ -645,10 +661,16 @@ function M:Refresh()
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
 			header.Archive:SetShown(t.s == "settled")
 			local withModel = self:SetupModelDropdown()
+			local withEffort = withModel and self:SetupEffortDropdown()
 			header.Model.tipBody = "The model for this thread. A change applies from the next reply on."
+			header.Effort.tipBody = "How hard the model reasons on this thread. A change applies from the next reply on."
+			local anchor = t.s == "settled" and header.Archive or header.Action
+			header.Effort:ClearAllPoints()
+			header.Effort:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
 			header.Model:ClearAllPoints()
-			header.Model:SetPoint("RIGHT", t.s == "settled" and header.Archive or header.Action, "LEFT", -4, 0)
-			header.Text:SetPoint("RIGHT", (t.s == "settled" and -200 or -110) - (withModel and header.Model:GetWidth() + 4 or 0), 0)
+			header.Model:SetPoint("RIGHT", withEffort and header.Effort or anchor, "LEFT", -4, 0)
+			local pickers = (withModel and header.Model:GetWidth() + 4 or 0) + (withEffort and header.Effort:GetWidth() + 4 or 0)
+			header.Text:SetPoint("RIGHT", (t.s == "settled" and -200 or -110) - pickers, 0)
 			self:SetPlaceholder(t.s == "working" and "Queue a follow-up  (Shift+Enter for a new line)" or "Message the agent  (Shift+Enter for a new line)")
 		else
 			f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
@@ -656,6 +678,7 @@ function M:Refresh()
 			header.Action:Hide()
 			header.Archive:Hide()
 			header.Model:Hide()
+			header.Effort:Hide()
 		end
 		right.Hint:SetText(self:ShotHint() or (ns.Gamepad and ns.Gamepad:IsActive() and ns.Gamepad:HintText()) or "")
 	end
@@ -671,8 +694,6 @@ end
 ---------------------------------------------------------------------------
 -- Model picker
 
--- The model a new thread starts on: what was last picked for this project, else what
--- T3 would choose for it, else the top of the list.
 -- The model the player picked for the new thread, now or last time in this project.
 -- Nil means T3 Code picks when the thread starts.
 function M:ChosenNewModel()
@@ -688,8 +709,9 @@ function M:NewThreadModel()
 	local env = ns.Store.EnvOf(self.newProject)
 	local p = ns.Store.projectsById[self.newProject or ""]
 	if p and p.dm then return p.dm end
-	local options = ns.Store:ModelOptions(env)
-	return options and options[1] and options[1].value
+	for _, o in ipairs(ns.Store:ModelOptions(env) or {}) do
+		if not o.header then return o.value end
+	end
 end
 
 -- The open thread's model, or the one just picked for it until T3 confirms it.
@@ -725,6 +747,67 @@ function M:SetupModelDropdown()
 	dd:SetOptions(options)
 	dd:Show()
 	return true
+end
+
+-- The reasoning level picked for the new thread, now or last time in this project,
+-- when the model it starts on offers it. Nil means the model's own.
+function M:ChosenNewEffort()
+	local options = ns.Store:EffortOptions(ns.Store.EnvOf(self.newProject), self:NewThreadModel())
+	if ns.Store.HasOption(options, self.newEffort) then return self.newEffort end
+	local saved = self.newProject and ns.db.efforts[self.newProject]
+	if ns.Store.HasOption(options, saved) then return saved end
+end
+
+-- The open thread's reasoning level, or the one just picked for it until T3 confirms it.
+function M:ThreadEffort(t)
+	local pending = self.pendingEffort
+	if pending and pending.thread == t.id then
+		if pending.value == t.re or GetTime() - pending.at > 30 then
+			self.pendingEffort = nil
+		else
+			return pending.value
+		end
+	end
+	return t.re
+end
+
+-- Fill the reasoning dropdown for the model on screen. Returns whether it's shown.
+function M:SetupEffortDropdown()
+	local dd = self.frame.Pages.threads.Right.Header.Effort
+	local env, model, current
+	if self.mode == "new" then
+		env, model = ns.Store.EnvOf(self.newProject), self:NewThreadModel()
+		current = self:ChosenNewEffort()
+		local p = ns.Store.projectsById[self.newProject or ""]
+		if not current and p and p.dm == model then current = p.de end
+	else
+		local t = ns.Store:Thread(ns.viewId)
+		if t then env, model, current = ns.Store.EnvOf(t.id), self:ThreadModel(t), self:ThreadEffort(t) end
+	end
+	local options, default = ns.Store:EffortOptions(env, model)
+	if not options then
+		dd:Hide()
+		return false
+	end
+	-- A level the model doesn't have (after a model switch, say) shows as its default.
+	dd.value = ns.Store.HasOption(options, current) and current or default
+	dd:SetOptions(options)
+	dd:Show()
+	return true
+end
+
+function M:PickEffort(value)
+	if self.mode == "new" then
+		self.newEffort = value
+		if self.newProject then ns.db.efforts[self.newProject] = value end
+	else
+		local t = ns.Store:Thread(ns.viewId)
+		if not t or value == self:ThreadEffort(t) then return end
+		local instanceId, slug = ns.Store.SplitModelKey(self:ThreadModel(t))
+		if not instanceId then return end
+		self.pendingEffort = { thread = t.id, value = value, at = GetTime(), cmd = ns.Transport:Send("model", t.id, instanceId, slug, value) }
+	end
+	self:Refresh()
 end
 
 function M:PickModel(value)
@@ -817,9 +900,11 @@ ns:On("CommandResult", function(r)
 		ns.Print(ns.Color("red", r.msg))
 		if UIErrorsFrame then UIErrorsFrame:AddMessage("T3 Code: " .. r.msg, 1, 0.2, 0.2) end
 	end
-	if M.pendingModel and r.id == M.pendingModel.cmd and r.ok == false then
-		M.pendingModel = nil
-		if M.frame and M.frame:IsShown() then M:Refresh() end
+	if r.ok == false then
+		local refused
+		if M.pendingModel and r.id == M.pendingModel.cmd then M.pendingModel, refused = nil, true end
+		if M.pendingEffort and r.id == M.pendingEffort.cmd then M.pendingEffort, refused = nil, true end
+		if refused and M.frame and M.frame:IsShown() then M:Refresh() end
 	end
 	if r.id == M.pendingNew then
 		M.pendingNew = nil
