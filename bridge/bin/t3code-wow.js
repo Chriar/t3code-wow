@@ -92,8 +92,11 @@ function resolveWowDir(args, cfg) {
   throw new Error(`couldn't find Battle.net. On Omarchy, install it with omarchy-install-gaming-battlenet, install WoW: Forever from it and launch it once, then run ./install.sh again.${where}`);
 }
 
+// Quiet unless it fails (enabling prints "Created symlink …", which isn't news).
 function systemctl(...args) {
-  return spawnSync('systemctl', ['--user', ...args], { stdio: 'inherit' }).status === 0;
+  const r = spawnSync('systemctl', ['--user', ...args], { encoding: 'utf8' });
+  if (r.status !== 0) process.stderr.write(r.stderr || `systemctl --user ${args.join(' ')} failed\n`);
+  return r.status === 0;
 }
 
 // Copy just the addon code (leaving Signals/ and generated media alone).
