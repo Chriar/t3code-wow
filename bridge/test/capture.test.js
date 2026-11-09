@@ -6,7 +6,7 @@ const screens = [
   { x: 0, y: 0, width: 1512, height: 982, scale: 2 }, // built-in Retina, the primary
   { x: 1512, y: -100, width: 2560, height: 1440, scale: 1 }, // external, NSScreen's bottom-left origin
 ];
-const win = (pid, X, Y, Width, Height, extra = {}) => ({ pid, owner: 'World of Warcraft', layer: 0, onscreen: true, bounds: { X, Y, Width, Height }, ...extra });
+const win = (pid, X, Y, Width, Height, extra = {}) => ({ pid, layer: 0, onscreen: true, bounds: { X, Y, Width, Height }, ...extra });
 
 test('a window on the Retina screen', () => {
   const w = pickMacWindow({ windows: [win(5, 0, 0, 1512, 982)], screens }, 5);
