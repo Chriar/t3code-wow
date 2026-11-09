@@ -213,17 +213,10 @@ export class StripCapture {
   }
 
   // On macOS, ask for Screen Recording up front (at bridge start) so the prompt shows
-  // before the game does. Elsewhere there's nothing to ask.
-  async prepare() {
-    if (this.resolveBackend() !== 'macos' || this.manualRegion) return;
-    try {
-      if (!(await this.macAllowed())) this.requestScreenAccess();
-    } catch {}
-  }
-
-  async macAllowed() {
-    const js = "ObjC.import('CoreGraphics'); ObjC.bindFunction('CGPreflightScreenCaptureAccess', ['bool', []]); $.CGPreflightScreenCaptureAccess()";
-    return (await run('osascript', ['-l', 'JavaScript', '-e', js])).toString().trim() === 'true';
+  // before the game does. macOS only prompts when the permission is missing. Elsewhere
+  // there's nothing to ask.
+  prepare() {
+    if (this.resolveBackend() === 'macos') this.requestScreenAccess();
   }
 
   tmpFile(name) {
