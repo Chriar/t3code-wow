@@ -30,9 +30,11 @@ import { POWERSHELL, whatPowerShellSaid } from './windows.js';
 const TASK = 't3code-wow';
 const SYSTEM32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 const LOG_ROTATE_BYTES = 1024 * 1024;
+const CONHOST_GONE_MS = 1000; // measured: how long after the task is stopped conhost is gone
 const GONE_CHECK_MS = 1000;
 const BRIDGE_STOP_MS = 3000;
-const STOP_GRACE_MS = 8000;
+const STOP_MARGIN_MS = 3000;
+const STOP_GRACE_MS = CONHOST_GONE_MS + GONE_CHECK_MS + BRIDGE_STOP_MS + STOP_MARGIN_MS;
 const POLL_MS = 100;
 const RECORD_WITHIN_MS = 1000;
 
