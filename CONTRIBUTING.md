@@ -2,7 +2,7 @@
 
 Contributions are welcome. This is an early, experimental release, so bug reports from real use are just as valuable as code.
 
-The supported setup is **Omarchy 4.5.0**, **T3 Code Nightly** and **World of Warcraft: Forever** under Proton. macOS with the native client and CachyOS with KDE Plasma are also supported, with less testing. Changes that make other setups work are welcome, as long as they don't break those.
+The supported setup is **Omarchy 4.5.0**, **T3 Code Nightly** and **World of Warcraft: Forever** under Proton. macOS with the native client and CachyOS with KDE Plasma are also supported, with less testing. Windows 10 and 11 with the native client is the newest setup and the least tested. Changes that make other setups work are welcome, as long as they don't break those.
 
 ## Issues
 
@@ -10,7 +10,7 @@ Open an issue for a bug you can reproduce, or for a specific idea. Keep it detai
 
 For a bug, include:
 
-- **Versions**: Omarchy (`omarchy-version`) or macOS (`sw_vers`), T3 Code Nightly (`t3 --version`), t3code-wow (`t3code-wow status`), and your controller if it's involved.
+- **Versions**: Omarchy (`omarchy-version`), macOS (`sw_vers`) or Windows (`winver`), T3 Code Nightly (`t3 --version`), t3code-wow (`t3code-wow status`), and your controller if it's involved.
 - **What you did, what you expected, what happened instead.** Steps to reproduce if you have them.
 - **`t3code-wow status --log`** output, and the text from `/t3 report` in game.
 - **A screenshot or short video** for anything you can see: a layout problem, a wrong state, a notice that didn't appear. It's often the fastest way to explain the problem.
@@ -34,6 +34,8 @@ cd t3code-wow
 ./install.sh                 # installs the addon and the bridge from your checkout
 ```
 
+On Windows, run `powershell -ExecutionPolicy Bypass -File install.ps1` in the clone instead of `./install.sh`.
+
 After editing, run `./install.sh` from your checkout, then `/reload` in game. It copies your checkout over the installed copy, puts the addon into the game and restarts the bridge. (`t3code-wow sync` only re-copies the *installed* addon, so it won't pick up your edits.) New files inside the addon load on `/reload`; new addon folders (such as live-update slots) need a full game restart.
 
 Tests:
@@ -46,6 +48,8 @@ luajit tools/smoke.lua addon/T3Code /tmp/t3snap.lua "$(cat /tmp/t3snap.view)"   
 ```
 
 On macOS, Homebrew doesn't package Lua 5.1: `brew install luajit` covers the LuaJIT runs, and the `lua5.1` ones need Lua 5.1 built from source.
+
+On Windows, `npm test` skips the tests that need `lua5.1` when it isn't installed, and says so. It registers a logon task under a throwaway name for about 15 seconds and removes it again. One test draws a small window to read a strip off the real screen, so it only runs when you say where the window goes: `$env:T3WOW_SCREEN_TEST = '100,100'; npm test` in PowerShell.
 
 `tools/wowstub.lua` stands in for the WoW API. Its widget methods come from the client's own API documentation, so calling a method that doesn't exist fails in tests the way it would in game.
 
