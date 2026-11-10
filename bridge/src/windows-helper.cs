@@ -21,8 +21,8 @@
 //
 //   op        arguments             reply fields                                  data
 //   procs     name                  procs: [{pid, path|null, startMs}]            none
-//   windows   pid, title            windows: [{hwnd, pid, className, title,       none
-//                                    visible, minimized, x, y, width, height}]
+//   windows   pid, title            windows: [{hwnd, pid, title, visible,         none
+//                                    minimized, x, y, width, height}]
 //   grab      hwnd, w, h            state, via, width, height                     width*height*3 bytes, RGB
 //             or x, y, w, h         (no hwnd: copy the screen at x,y)
 //   shot      hwnd, quality         state, width, height                          a JPEG file
@@ -68,7 +68,6 @@ namespace T3CodeWow {
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
@@ -213,8 +212,6 @@ namespace T3CodeWow {
         StringBuilder title = new StringBuilder(256);
         GetWindowText(hwnd, title, title.Capacity);
         if (owner != pid && title.ToString() != wanted) return true;
-        StringBuilder className = new StringBuilder(256);
-        GetClassName(hwnd, className, className.Capacity);
         RECT client;
         GetClientRect(hwnd, out client);
         POINT origin = new POINT();
@@ -222,7 +219,6 @@ namespace T3CodeWow {
         Dictionary<string, object> window = new Dictionary<string, object>();
         window["hwnd"] = hwnd.ToInt64();
         window["pid"] = owner;
-        window["className"] = className.ToString();
         window["title"] = title.ToString();
         window["visible"] = IsWindowVisible(hwnd);
         window["minimized"] = IsIconic(hwnd);

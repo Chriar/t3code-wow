@@ -13,7 +13,7 @@ const FAKE = fileURLToPath(new URL('./fake-windows-helper.mjs', import.meta.url)
 
 const wow = { pid: 4242, path: 'D:\\Games\\World of Warcraft\\_forever_\\Wow.exe', startMs: Date.UTC(2026, 10, 9, 9, 27, 45) };
 const explorer = { pid: 77, path: 'C:\\Windows\\explorer.exe', startMs: Date.UTC(2026, 10, 9, 8, 0, 0) };
-const win = (hwnd, pid, extra = {}) => ({ hwnd, pid, className: 'waApplication Window', title: 'World of Warcraft', visible: true, minimized: false, x: 503, y: 260, width: 2992, height: 1683, ...extra });
+const win = (hwnd, pid, extra = {}) => ({ hwnd, pid, title: 'World of Warcraft', visible: true, minimized: false, x: 503, y: 260, width: 2992, height: 1683, ...extra });
 const corner = { width: 672, height: 192 };
 
 function fakeDesktop(scenario, options = {}) {

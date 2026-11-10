@@ -26,7 +26,6 @@ import { fileURLToPath } from 'node:url';
  * @typedef {object} WinWindow
  * @property {number} hwnd
  * @property {number} pid
- * @property {string} className
  * @property {string} title
  * @property {boolean} visible    False for the hidden helper windows a program owns.
  * @property {boolean} minimized  Windows gives a minimized window an empty client area, so its size says nothing.
