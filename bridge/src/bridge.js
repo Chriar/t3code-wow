@@ -444,7 +444,9 @@ export class Bridge {
     // since it spoke. The strip stays on screen and is decoded again on every poll, so
     // this is also what keeps a pre-publish hello from re-arming what `publishNow`
     // cleared.
-    if (hello.gen >= this.lastGen) {
+    // An unencrypted hello is only a bare hello: nothing in it is trusted.
+    if (!sealed) c.hashes = {};
+    else if (hello.gen >= this.lastGen) {
       c.hashes = { list: hello.list, projects: hello.projects, view: hello.viewHash };
     }
     c.lastSeen = Date.now();

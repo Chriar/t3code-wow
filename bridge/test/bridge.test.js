@@ -171,6 +171,9 @@ test('a part that changes and changes back is sent again, not assumed', needsLua
   // A hello that has applied our latest publish is trusted again.
   hello(51, b.lastGen);
   assert.equal(b.client.hashes.view, first.x.v, 'a confirming hello is trusted');
+  // Hashes in an unencrypted hello aren't trusted: it's only ever a bare hello.
+  b.onFrame(plainFrame(52, [['H', 1, 'sess', 'ui1', 4, 1, b.lastGen, 'o', '', '0.1.0', '8', '', first.x.l, first.x.p, first.x.v]]));
+  assert.equal(b.client.hashes.view, undefined, 'an unencrypted hello is not trusted');
   b.stop();
 });
 
