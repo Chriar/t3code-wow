@@ -15,7 +15,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { RS, US } from './codec.js';
 import { StripCapture } from './capture.js';
-import { SlotBank } from './slots.js';
+import { SlotBank, replaceFile, FileInUse } from './slots.js';
 import { threadStatus, isUnread, effortOf } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
@@ -253,11 +253,14 @@ export class Bridge {
   saveState() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
-      fs.mkdirSync(this.stateDir, { recursive: true });
-      const tmp = this.stateFile + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(this.persist));
-      fs.renameSync(tmp, this.stateFile);
+      if (!this.saveStateNow()) this.saveState();
     }, 250);
+  }
+
+  saveStateNow() {
+    clearTimeout(this.saveTimer);
+    fs.mkdirSync(this.stateDir, { recursive: true });
+    return replaceFile(this.stateFile, JSON.stringify(this.persist));
   }
 
   // ---------------------------------------------------------------------------
@@ -295,6 +298,9 @@ export class Bridge {
     clearTimeout(this.publishTimer);
     this.t3.stop();
     this.voice.hush();
+    // The process usually exits before the save timer fires, and the next bridge would
+    // then run the last command again.
+    this.saveStateNow();
   }
 
   checkProcess() {
@@ -306,7 +312,9 @@ export class Bridge {
       // A new client process: its sound cache is empty, so every signal file is
       // reusable. Reset them and start counting again.
       this.log(`WoW client started (pid ${proc.pid}); resetting live-update signals`);
-      this.bank.resetSignals();
+      // A bell left rung makes the new client load a slot every few seconds. Until every
+      // bell is empty the client isn't recorded, so the next check tries again.
+      if (!this.bank.resetSignals()) return;
       this.persist.processKey = key;
       this.persist.sigCounter = 1;
       this.persist.raised = [];
@@ -1004,6 +1012,17 @@ export class Bridge {
         this.persist.slotGuess = predicted + 1;
       }
     } catch (err) {
+      if (err instanceof FileInUse) {
+        // No counter moved, so the same publish is due again. Some slots may already
+        // hold it, which is why the digest is dropped. Counting this attempt as the last
+        // publish spaces the retries by the usual pacing instead of back to back.
+        this.inUseCount = (this.inUseCount || 0) + 1;
+        if (this.inUseCount % 25 === 1) this.log(`update waiting: ${err.message}`);
+        this.lastDigest = null;
+        this.lastPublishAt = Date.now();
+        this.markDirty('important');
+        return false;
+      }
       this.log(`publish failed: ${err.message}`);
       return false;
     }
