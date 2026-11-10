@@ -103,6 +103,8 @@ local DEFAULTS = {
 		padChord = "auto",
 	},
 	drafts = {},
+	models = {}, -- project id -> the model last picked for new threads there
+	efforts = {}, -- project id -> the reasoning level last picked for new threads there
 	cmdId = 0,
 	sigNext = 1,
 	gen = 0,
