@@ -595,6 +595,32 @@ test('pacing: fast while reading, patient otherwise, reserve kept for alerts', (
   b.stop();
 });
 
+test('a locked file backs the publish off instead of retrying in a loop', () => {
+  const { b } = fakeBridge(600);
+  const logs = [];
+  b.log = (m) => logs.push(m);
+  b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 1, 0, 'oa', 't1', '0.1.0', '600']]));
+  b.client.seq = 99; // a command the addon is waiting on
+  try {
+    const raise = b.bank.raise.bind(b.bank);
+    b.bank.raise = () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    };
+    assert.equal(b.publishNow(), false);
+    assert.ok(b.nextPublishDelay() >= 200, 'an unacknowledged command still waits for the retry');
+    assert.equal(b.publishNow(), false);
+    assert.ok(b.nextPublishDelay() >= 450, 'the wait grows');
+    assert.ok(b.dirty.important, 'the update stays queued');
+    b.bank.raise = raise;
+    assert.ok(b.publishNow());
+    assert.ok(b.nextPublishDelay() === null || b.nextPublishDelay() > 1000, 'no retry after it went through');
+    assert.equal(logs.filter((l) => l.startsWith('publish failed')).length, 1);
+    assert.ok(logs.some((l) => l.startsWith('publish recovered after 2 failed tries')));
+  } finally {
+    b.stop();
+  }
+});
+
 test('usage comes from the Omarchy records the Agents panel keeps', async () => {
   const { OmarchyUsage, mergeUsage } = await import('../src/usage.js');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-usage-'));
