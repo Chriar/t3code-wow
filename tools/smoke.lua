@@ -104,6 +104,30 @@ do
 	check(ns.Store.listKey == "L2" and ns.Store.projectsKey == "P1" and ns.Store.viewKey == "V1", "it only claims the parts it was sent")
 	check(ns.Transport:Payload():find("\031L2\031P1\031V1", 1, true) ~= nil, "the hello reports what it holds")
 	check(#(ns.Transcript.scrollBox._rows or {}) == #rows, "the transcript isn't rebuilt for an unchanged one")
+
+	-- Dropping the transcript must drop the hash too, or the bridge would think the
+	-- addon still has it and stop sending it (Back, then pick the same thread again).
+	ns.Store:Apply({ x = { l = "L3", p = "P1", v = "" }, threads = ns.Store.data.threads, projects = ns.Store.data.projects, bridge = ns.Store.data.bridge, usage = ns.Store.data.usage })
+	check(ns.Store.data.view == nil and ns.Store.viewKey == "", "a dropped transcript is not claimed")
+
+	-- Settling or reopening a thread changes the rows (quick replies) without the
+	-- transcript changing, so its hash alone can't decide a redraw.
+	ns.Store:Apply({
+		x = { l = "L4", p = "P1", v = "V1" }, same = "v",
+		threads = ns.Store.data.threads, projects = ns.Store.data.projects, bridge = ns.Store.data.bridge, usage = ns.Store.data.usage,
+	})
+	local dp = ns.Transcript.dp
+	local thread = ns.Store:Thread(ns.viewId)
+	local was = thread.s
+	thread.s = was == "open" and "settled" or "open"
+	ns.Store:Apply({
+		x = { l = "L5", p = "P1", v = "V1" }, same = "v",
+		threads = ns.Store.data.threads, projects = ns.Store.data.projects, bridge = ns.Store.data.bridge, usage = ns.Store.data.usage,
+	})
+	check(ns.Transcript.dp ~= dp, "a status change still redraws the transcript")
+	thread.s = was
+	-- Back to a complete snapshot for the rest of the checks.
+	ns.Store:Apply(data)
 end
 
 -- Send a message: queued, echoed, and present in the strip payload.
@@ -655,6 +679,23 @@ do
 	ns.db.settings.trackerPoint = nil
 	for _, t in ipairs(WOWSTUB.tickers) do t.fn() end
 	check(ns.Tracker.attached == "below", "reset reattaches it")
+
+	-- A link that goes stale on its own clock, with no update arriving to say so, still
+	-- reaches the tracker: the once-a-second tick notices the state changed.
+	ns.Transport.bridgeNow = time() - 1000
+	ns.Tracker:RefreshTimers()
+	local found = false
+	for _, b in ipairs(f.Lines) do
+		if b._shown and b.Title:GetText():find("Connection lost", 1, true) then found = true end
+	end
+	check(found, "the tracker says the connection was lost")
+	ns.Transport.bridgeNow = time()
+	ns.Tracker:RefreshTimers()
+	found = false
+	for _, b in ipairs(f.Lines) do
+		if b._shown and b.Title:GetText():find("Connection lost", 1, true) then found = true end
+	end
+	check(not found, "and that it is back")
 end
 
 -- Minimap button

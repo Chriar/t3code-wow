@@ -191,6 +191,7 @@ function K:Refresh(resetPosition)
 		if (t.s == "open" or t.s == "failed") and t.un then table.insert(entries, t) end
 	end
 	local state = ns.Transport:BridgeState()
+	self.bridgeState = state
 	local notice
 	if state == "exhausted" then
 		notice = { text = "Live updates paused", sub = "Click to /reload", action = function() ReloadUI() end }
@@ -266,11 +267,18 @@ end))
 ns:On("DataChanged", function() K:Refresh() end)
 ns:On("LinkChanged", function() K:Refresh() end)
 
--- Once a second only the elapsed times change. Rewriting those lines' text keeps the
--- section as it is instead of rebuilding every line.
+-- Once a second only the elapsed times change, and the link can go stale on its own
+-- clock (no update for a while) with no data arriving to say so. Watch both: the text
+-- is cheap, and a state change rebuilds the section so a notice can appear.
 function K:RefreshTimers()
 	local f = self.frame
 	if not f or not f:IsShown() then return end
+	local state = ns.Transport:BridgeState()
+	if state ~= self.bridgeState then
+		self.bridgeState = state
+		K:Refresh()
+		return
+	end
 	for _, b in ipairs(f.Lines) do
 		if b:IsShown() and b.thread then
 			local sub = SubText(b.thread)

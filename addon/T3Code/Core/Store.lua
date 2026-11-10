@@ -49,9 +49,18 @@ function Store:Apply(data)
 	if type(data.x) == "table" then
 		-- Only record the hash of a part this snapshot actually carried: the bridge's
 		-- hash describes what it sent, and a part it left out is still the old one.
+		-- A part that was neither sent nor kept is gone, so claim nothing for it.
 		self.listKey = tostring(data.x.l or "")
-		if sentProjects then self.projectsKey = tostring(data.x.p or "") end
-		if sentView then self.viewKey = tostring(data.x.v or "") end
+		if sentProjects then
+			self.projectsKey = tostring(data.x.p or "")
+		elseif not same:find("p", 1, true) then
+			self.projectsKey = ""
+		end
+		if sentView then
+			self.viewKey = tostring(data.x.v or "")
+		elseif not same:find("v", 1, true) then
+			self.viewKey = ""
+		end
 	else
 		-- An older bridge sends everything in every snapshot, so a new one is a new
 		-- version of both parts.

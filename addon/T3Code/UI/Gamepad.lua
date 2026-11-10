@@ -815,13 +815,16 @@ watcher:SetScript("OnUpdate", function()
 	local held = ReadButtons()
 	if not held then return end
 	local back = held.PADBACK
-	if back and not backWasDown and held.PADLTRIGGER and held.PADRTRIGGER then
+	local triggers = held.PADLTRIGGER and held.PADRTRIGGER
+	if back and not backWasDown and triggers then
 		L.firedAt = GetTime()
 		ns.Safe(function() L:Open() end)()
 		-- The game's own Back handler ran first; drop its "nothing to focus" error.
 		if UIErrorsFrame and UIErrorsFrame.Clear then pcall(UIErrorsFrame.Clear, UIErrorsFrame) end
 	end
-	backWasDown = back
+	-- Latch Back only once the chord could have fired: reading the controller 20 times a
+	-- second, a player who presses Back a moment before the triggers still gets it.
+	backWasDown = back and (triggers or backWasDown) or false
 end)
 
 function L:SetupChord()
