@@ -50,7 +50,7 @@ function Store:Apply(data)
 		-- Only record the hash of a part this snapshot actually carried: the bridge's
 		-- hash describes what it sent, and a part it left out is still the old one.
 		-- A part that was neither sent nor kept is gone, so claim nothing for it.
-		self.listKey = tostring(data.x.l or "")
+		self.listKey = data.x.l ~= nil and tostring(data.x.l) or self.listKey
 		if sentProjects then
 			self.projectsKey = tostring(data.x.p or "")
 		elseif not same:find("p", 1, true) then

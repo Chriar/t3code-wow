@@ -251,9 +251,15 @@ function T:Apply(data, bootstrap)
 		self.lastData = GetTime()
 		self.bridgeNow = data.now
 		local hadModels = ns.Store.modelsHash
+		local hadView, hadProjects = ns.Store.viewKey, ns.Store.projectsKey
 		ns.Store:Apply(data)
 		-- Tell the bridge we have the new list, or it keeps sending it with every update.
 		if ns.Store.modelsHash ~= hadModels then self:Touch() end
+		-- And tell it when a part it may leave out is gone from here (the player went
+		-- back, say), or it keeps believing we still have it and never resends it.
+		if (hadView ~= "" and ns.Store.viewKey == "") or (hadProjects ~= "" and ns.Store.projectsKey == "") then
+			self:Touch()
+		end
 	end
 	ns:Fire("LinkChanged")
 	return fresh

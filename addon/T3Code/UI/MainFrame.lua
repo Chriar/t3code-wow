@@ -982,14 +982,20 @@ function M:RefreshTimers()
 end
 
 C_Timer.NewTicker(1, ns.Safe(function()
-	if not (M.frame and M.frame:IsShown() and M.page == "threads") then return end
+	if not (M.frame and M.frame:IsShown()) then return end
 	-- The link can go stale on its own clock, with no update arriving to say so.
 	local state = ns.Transport:BridgeState()
 	if state ~= M.bridgeState then
 		M.bridgeState = state
-		M:Refresh()
+		if M.page == "threads" then
+			M:Refresh()
+		else
+			M.frame.Status:SetText(M:StatusLine())
+			M:UpdateRefreshButton()
+		end
 		return
 	end
+	if M.page ~= "threads" then return end
 	for _, t in ipairs(ns.Store.data.threads) do
 		if t.s == "working" then
 			M:RefreshTimers()

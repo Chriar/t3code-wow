@@ -416,6 +416,7 @@ function T:Refresh(force)
 		context = t and ((t.s or "") .. "|" .. (t.l or "")) or "gone"
 	else
 		context = (ns.Store.listKey or "") .. "|" .. tostring((ns.Store.data.bridge or {}).host or "")
+			.. "|" .. tostring(ns.Gamepad and ns.Gamepad:IsActive())
 	end
 	local key = table.concat({
 		tostring(ns.viewId), ns.Store.viewKey or "", ns.Main.mode, context,

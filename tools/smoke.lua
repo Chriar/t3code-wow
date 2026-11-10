@@ -93,6 +93,7 @@ do
 	})
 	check(ns.Store.listKey == "L1" and ns.Store.projectsKey == "P1" and ns.Store.viewKey == "V1", "the addon records what it applied")
 	rows = ns.Transcript.scrollBox._rows or {}
+	local dpBefore = ns.Transcript.dp
 	data.gen = data.gen + 1
 	ns.Transport:Apply({
 		gen = data.gen, same = "pv", x = { l = "L2", p = "P2", v = "V2" },
@@ -103,12 +104,19 @@ do
 	check(ns.Store.data.projects == projects, "an omitted project list is kept")
 	check(ns.Store.listKey == "L2" and ns.Store.projectsKey == "P1" and ns.Store.viewKey == "V1", "it only claims the parts it was sent")
 	check(ns.Transport:Payload():find("\031L2\031P1\031V1", 1, true) ~= nil, "the hello reports what it holds")
-	check(#(ns.Transcript.scrollBox._rows or {}) == #rows, "the transcript isn't rebuilt for an unchanged one")
+	check(#(ns.Transcript.scrollBox._rows or {}) == #rows and ns.Transcript.dp == dpBefore, "the transcript isn't rebuilt for an unchanged one")
 
-	-- Dropping the transcript must drop the hash too, or the bridge would think the
-	-- addon still has it and stop sending it (Back, then pick the same thread again).
-	ns.Store:Apply({ x = { l = "L3", p = "P1", v = "" }, threads = ns.Store.data.threads, projects = ns.Store.data.projects, bridge = ns.Store.data.bridge, usage = ns.Store.data.usage })
+	-- Dropping the transcript must drop the hash too, and tell the bridge, or it would
+	-- think the addon still has it and never send it again (Back, then the same thread).
+	data.gen = data.gen + 1
+	ns.Transport:Apply({
+		gen = data.gen, x = { l = "L3", p = "P1", v = "" },
+		threads = ns.Store.data.threads, projects = ns.Store.data.projects,
+		bridge = ns.Store.data.bridge, usage = ns.Store.data.usage,
+		ack = { ui = ns.ui, seq = ns.Transport.stripSeq },
+	})
 	check(ns.Store.data.view == nil and ns.Store.viewKey == "", "a dropped transcript is not claimed")
+	check(ns.Transport.stripShown, "and the bridge is told about it")
 
 	-- Settling or reopening a thread changes the rows (quick replies) without the
 	-- transcript changing, so its hash alone can't decide a redraw.
