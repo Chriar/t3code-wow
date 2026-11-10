@@ -98,14 +98,17 @@ function cellValueAt(img, x, y) {
 }
 
 function readCells(img, geo, start, n) {
-  const { ox, oy, cell } = geo;
-  const half = Math.floor(cell / 2);
+  const { ox, oy } = geo;
+  // `pitch` is the measured cell spacing when it isn't a whole number of pixels. The
+  // game's reported screen height can be a little off from what it draws (1792 vs 1800
+  // on a 2x laptop), so the addon's 3px squares land about 3.01px apart.
+  const p = geo.pitch ?? geo.cell;
   const cells = new Array(n);
   for (let k = 0; k < n; k++) {
     const idx = start + k;
     const col = idx % CELLS_PER_ROW;
     const row = Math.floor(idx / CELLS_PER_ROW);
-    const v = cellValueAt(img, ox + col * cell + half, oy + row * cell + half);
+    const v = cellValueAt(img, ox + Math.floor(col * p + p / 2), oy + Math.floor(row * p + p / 2));
     if (v < 0) return null;
     cells[k] = v;
   }
@@ -146,12 +149,32 @@ export function decodeImage(img, hint, opts) {
   const head = headerAt(img, geo);
   if (head.len > MAX_PAYLOAD) return { error: 'bad length', geo };
   const total = HEADER_BYTES + head.len + 2;
+  let out = readFrame(img, geo, head, total);
+  if (out.error === 'checksum mismatch') out = refinePitch(img, geo, head, total) || out;
+  return out;
+}
+
+function readFrame(img, geo, head, total) {
   const cells = readCells(img, geo, 0, cellsForBytes(total));
   if (!cells) return { error: 'strip clipped by capture region', geo };
   const bytes = cellsToBytes(cells, total);
   const [s1, s2] = fletcher16(bytes, 2, HEADER_BYTES + head.len);
   if (bytes[total - 2] !== s1 || bytes[total - 1] !== s2) return { error: 'checksum mismatch', geo };
   return { version: head.version, seq: head.seq, payload: Buffer.from(bytes.slice(HEADER_BYTES, HEADER_BYTES + head.len)), geo };
+}
+
+// The squares drift when the cell spacing isn't a whole number of pixels. Try spacings
+// within 2% of the whole-pixel size and keep the middle of the range that reads
+// cleanly, so the next frame (and longer ones) have the most margin either side.
+function refinePitch(img, geo, head, total) {
+  const ok = [];
+  for (let p = geo.cell * 0.98; p <= geo.cell * 1.02; p += geo.cell / 1000) {
+    const g = { ox: geo.ox, oy: geo.oy, cell: geo.cell, pitch: p };
+    if (!headerAt(img, g)) continue;
+    const out = readFrame(img, g, head, total);
+    if (!out.error) ok.push(out);
+  }
+  return ok.length ? ok[Math.floor(ok.length / 2)] : null;
 }
 
 // Render cells into an RGB image (for tests and the probe tool).

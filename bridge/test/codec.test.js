@@ -51,6 +51,29 @@ test('no strip -> null; corrupted -> checksum error', () => {
   assert.equal(out.error, 'checksum mismatch');
 });
 
+test('decodes squares that drift off whole pixels', () => {
+  // The game reports a slightly smaller screen than it draws, so 3px squares land ~3.0125px apart.
+  const payload = 'H\x1f1\x1fsession\x1fui\x1f14\x1f1\x1f0\x1ftg\x1f\x1f0.2.0\x1f1200\x1f';
+  const cells = encodeFrame(33, payload);
+  const pitch = 3.0125;
+  const width = 500;
+  const height = 12;
+  const data = Buffer.alloc(width * height * 3, 40);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const k = Math.floor(x / pitch) + Math.floor(y / pitch) * 160;
+      if (Math.floor(x / pitch) >= 160 || k >= cells.length) continue;
+      const i = (y * width + x) * 3;
+      data[i] = cells[k] & 4 ? 255 : 0;
+      data[i + 1] = cells[k] & 2 ? 255 : 0;
+      data[i + 2] = cells[k] & 1 ? 255 : 0;
+    }
+  }
+  const out = decodeImage({ width, height, data });
+  assert.ok(out && !out.error, out?.error);
+  assert.equal(out.payload.toString('utf8'), payload);
+});
+
 test('max payload fits', () => {
   const payload = 'x'.repeat(MAX_PAYLOAD);
   const cells = encodeFrame(9, payload);
