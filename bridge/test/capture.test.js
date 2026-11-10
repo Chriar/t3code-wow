@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickMacWindow, pickKwinWindow } from '../src/capture.js';
+import { StripCapture, pickMacWindow, pickKwinWindow } from '../src/capture.js';
 
 const screens = [
   { x: 0, y: 0, width: 1512, height: 982, scale: 2 }, // built-in Retina, the primary
@@ -33,6 +33,12 @@ test('KWin: the game by pid over a same-named window, else by caption', () => {
   assert.equal(pickKwinWindow(infos, 5, 'd1').x, 300);
   assert.equal(pickKwinWindow(infos, 77, 'd1').uuid, '{9}');
   assert.equal(pickKwinWindow([kwin(9, 'Battle.net')], 77, 'd1').found, false);
+});
+
+test('Windows: a configured region of the screen comes back as an image the decoder can read', { skip: process.platform !== 'win32' && 'needs Windows PowerShell' }, async () => {
+  const res = await new StripCapture({ region: { x: 0, y: 0 } }).grab();
+  const { width, height } = StripCapture.stripPixels(4);
+  assert.deepEqual([res.status, res.via, res.image.width, res.image.height, res.image.data.length], ['ok', 'screen', width, height, width * height * 3]);
 });
 
 test('KWin: hidden when minimized or on another desktop, visible on all desktops', () => {

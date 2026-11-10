@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan } from '../src/bridge.js';
-import { SlotBank } from '../src/slots.js';
+import { holdOpen } from './hold-open.mjs';
+import { SlotBank, FileInUse, LONG_SILENT_WAV } from '../src/slots.js';
 import { luaValue } from '../src/luaser.js';
 import { markdownToWow, markdownToSpeech } from '../src/format.js';
 import { RS, US } from '../src/codec.js';
@@ -14,6 +15,15 @@ import crypto from 'node:crypto';
 
 let currentKeys = null; // the latest fakeBridge's strip keys: frame() seals with them
 
+function hasLua() {
+  try {
+    execFileSync('lua5.1', ['-v'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const needsLua = { skip: process.platform === 'win32' && !hasLua() && 'lua5.1 is not installed' };
 
 function tempAddons(slots = 8) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-addons-'));
@@ -99,7 +109,7 @@ test('parseFrame reads hello and commands', () => {
   assert.deepEqual(f.commands[0], { id: 3, verb: 'send', args: ['tid', 'hi there'] });
 });
 
-test('publish writes the next slots and bootstrap slots, then raises one signal', () => {
+test('publish writes the next slots and bootstrap slots, then raises one signal', needsLua, () => {
   const { b, dir } = fakeBridge();
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 1, 0, 'o', '', '0.1.0']]));
   assert.ok(b.publishNow());
@@ -191,7 +201,7 @@ test('a reload (new ui token) resets the slot pointer; stale beacons do not', ()
   b.stop();
 });
 
-test('an addon waiting on a stale signal gets that signal raised too', () => {
+test('an addon waiting on a stale signal gets that signal raised too', needsLua, () => {
   const { b, dir } = fakeBridge();
   b.persist.sigCounter = 9;
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 4, 0, 'o', '', '0.1.0']]));
@@ -216,7 +226,7 @@ test('signals are never skipped, and never rung ahead of our counter', () => {
   b.stop();
 });
 
-test('a drifted slot prediction still covers the slot the addon will load', () => {
+test('a drifted slot prediction still covers the slot the addon will load', needsLua, () => {
   const { b, dir } = fakeBridge(120);
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 40, 5, 0, 'o', '', '0.1.0']]));
   b.client.slotNext = 101; // we kept predicting while the game didn't load anything
@@ -242,6 +252,209 @@ test('bells rotate: ringing k empties the bell four behind it', () => {
   for (let k = 1; k <= 8; k++) assert.equal(rung(dir, k), 0);
 });
 
+function slotInUseOnce(b) {
+  const held = {};
+  b.bank.write = () => {
+    delete b.bank.write;
+    held.refusedAt = Date.now();
+    throw new FileInUse(b.bank.slotFile(1));
+  };
+  return held;
+}
+
+async function until(done, what) {
+  const end = Date.now() + 3000;
+  while (!done()) {
+    assert.ok(Date.now() < end, `${what} within 3 s`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+const windowsOnly = { skip: process.platform !== 'win32' && 'only Windows refuses to replace a file another program has open' };
+
+test('a ring that stops halfway leaves no stale bell rung, and ringing again finishes it', () => {
+  const dir = tempAddons(2);
+  const bank = new SlotBank(dir, { slots: 2 });
+  for (let k = 1; k <= 4; k++) bank.raise(k);
+  fs.rmSync(bank.bellFile(5));
+  fs.mkdirSync(bank.bellFile(5));
+  assert.throws(() => bank.raise(5));
+  assert.equal(rung(dir, 1), 0, 'bell 1 (the same file as bell 9) was emptied before bell 5 was tried');
+  fs.rmdirSync(bank.bellFile(5));
+  bank.raise(5);
+  for (const k of [2, 3, 4, 5]) assert.ok(rung(dir, k) > 0, `bell ${k}`);
+});
+
+test('bells and controls already in the right state are not written again', () => {
+  const dir = tempAddons(2);
+  const bank = new SlotBank(dir, { slots: 2 });
+  bank.raise(3);
+  const files = [bank.bellFile(3), bank.bellFile(7), bank.sigFile(3999), bank.sigFile(4000)];
+  const longAgo = new Date('2001-01-01T00:00:00Z');
+  for (const f of files) fs.utimesSync(f, longAgo, longAgo);
+  bank.raise(3);
+  bank.prepareBells();
+  for (const f of files) assert.equal(fs.statSync(f).mtimeMs, longAgo.getTime(), `${path.basename(f)} was left alone`);
+});
+
+test('emptying the bells for a new client reports that all are empty, also when there is nothing to empty', () => {
+  const dir = tempAddons(2);
+  const bank = new SlotBank(dir, { slots: 2 });
+  bank.raise(1);
+  assert.equal(bank.resetSignals(), true);
+  assert.equal(rung(dir, 1), 0);
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-addons-'));
+  assert.equal(new SlotBank(bare).resetSignals(), true, 'a broken install does not keep a new client waiting');
+});
+
+test('a new game client is recorded only once the bells of the last one are empty', () => {
+  const { b, dir } = fakeBridge();
+  b.persist.sigCounter = 3;
+  b.bank.raise(2);
+  b.bank.resetSignals = () => {
+    delete b.bank.resetSignals;
+    return false;
+  };
+  const client = { pid: 2, startTicks: 2 };
+  b.onProcess(client);
+  assert.deepEqual([b.persist.processKey, b.persist.sigCounter], ['1:1', 3], 'the last client is still the one on record');
+  assert.equal(rung(dir, 1), 0, 'nothing is rung for the new one');
+  b.onProcess(client);
+  assert.deepEqual([b.persist.processKey, b.persist.sigCounter], ['2:2', 2]);
+  assert.equal(rung(dir, 2), 0, 'the old bell is empty');
+  assert.ok(rung(dir, 1) > 0, 'the new client gets its first update on bell 1');
+  b.stop();
+});
+
+test('an ack that meets a file in use goes out again by itself, not at once, and rings one bell', async () => {
+  const { b, dir } = fakeBridge();
+  const held = slotInUseOnce(b);
+  b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 1, 0, 'o', '', '0.1.0']]));
+  const slot = () => fs.readFileSync(b.bank.slotFile(1), 'latin1');
+  await until(() => /ack=\{ui="ui1",seq=1\}/.test(slot()), 'the ack goes out again');
+  assert.ok(Date.now() - held.refusedAt >= 350, 'at the pace of an ack, not back to back');
+  assert.match(slot(), /nextSig=2,/, 'the refused try moved no counter');
+  assert.ok(rung(dir, 1) > 0);
+  for (let k = 2; k <= 8; k++) assert.equal(rung(dir, k), 0, `bell ${k} not rung`);
+  b.stop();
+});
+
+test('an update that was refused is still owed when nothing else has changed', () => {
+  const { b, dir } = fakeBridge();
+  assert.ok(b.publishNow('test'));
+  slotInUseOnce(b);
+  assert.equal(b.publishNow('test'), false);
+  assert.equal(rung(dir, 2), 0, 'the refused try rings nothing');
+  assert.notEqual(b.nextPublishDelay(), null, 'the next try is scheduled without waiting for another change');
+  assert.ok(b.publishNow(), 'and sends the same snapshot');
+  assert.ok(rung(dir, 2) > 0);
+  assert.equal(rung(dir, 3), 0, 'one bell for the two tries');
+  b.stop();
+});
+
+test('a file that stays in use is logged once, and again when it is still in use half a minute on', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { b } = fakeBridge();
+  t.after(() => b.stop());
+  b.bank.write = () => {
+    throw new FileInUse(b.bank.slotFile(1));
+  };
+  const logged = () => b.logs.filter((line) => line.includes('update waiting')).length;
+  for (let tries = 0; tries < 60; tries++) b.publishNow('test');
+  assert.equal(logged(), 1);
+  t.mock.timers.tick(30000);
+  b.publishNow('test');
+  assert.equal(logged(), 2);
+});
+
+test('a command run just before the bridge stops is not run again by the next bridge', async () => {
+  const { b, dir, calls } = fakeBridge();
+  const strip = frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0'], ['C', 1, 'send', 't1', 'hello']]);
+  b.onFrame(strip);
+  b.stop();
+  const next = new Bridge({ addonsDir: dir, config: { slots: 8 }, log: () => {}, stateDir: b.stateDir });
+  next.proc = b.proc;
+  next.t3.sendMessage = async (...a) => calls.push(['sent again', ...a]);
+  next.onFrame(strip);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(calls.map((c) => c[0]), ['send']);
+  next.stop();
+});
+
+test('a slot the game has open: the update waits, the old snapshot stays whole, no temp file is left', windowsOnly, async () => {
+  const { b, dir } = fakeBridge();
+  assert.ok(b.publishNow('test'));
+  const slot = b.bank.slotFile(1);
+  const before = fs.readFileSync(slot);
+  const release = await holdOpen(slot);
+  try {
+    assert.equal(b.publishNow('test'), false);
+    assert.deepEqual(fs.readFileSync(slot), before);
+    assert.deepEqual(fs.readdirSync(path.dirname(slot)).filter((f) => f.endsWith('.tmp')), []);
+    assert.equal(rung(dir, 2), 0, 'no bell for an update the game cannot load');
+  } finally {
+    await release();
+  }
+  assert.ok(b.publishNow());
+  assert.notDeepEqual(fs.readFileSync(slot), before);
+  assert.ok(rung(dir, 2) > 0);
+  b.stop();
+});
+
+test('a rung bell the game has open: ringing it again works, and the bell that reuses its file waits', windowsOnly, async () => {
+  const dir = tempAddons(2);
+  const bank = new SlotBank(dir, { slots: 2 });
+  for (let k = 1; k <= 4; k++) bank.raise(k);
+  const release = await holdOpen(bank.bellFile(1));
+  try {
+    assert.equal(bank.raise(1), true);
+    assert.throws(() => bank.raise(5), FileInUse);
+    assert.equal(rung(dir, 5), 0, 'bell 5 is not rung while bell 1 (the same file as bell 9) still is');
+    assert.equal(rung(dir, 1), LONG_SILENT_WAV.length, 'bell 1 is whole');
+  } finally {
+    await release();
+  }
+  bank.raise(5);
+  assert.equal(rung(dir, 1), 0);
+  assert.ok(rung(dir, 5) > 0);
+});
+
+test('a new game client is not ready until a bell the game still has open is empty', windowsOnly, async () => {
+  const dir = tempAddons(2);
+  const bank = new SlotBank(dir, { slots: 2 });
+  bank.raise(1);
+  bank.raise(2);
+  const release = await holdOpen(bank.bellFile(2));
+  try {
+    assert.equal(bank.resetSignals(), false);
+    assert.equal(rung(dir, 2), LONG_SILENT_WAV.length, 'bell 2 is whole');
+    assert.equal(rung(dir, 1), 0, 'the others are emptied meanwhile');
+  } finally {
+    await release();
+  }
+  assert.equal(bank.resetSignals(), true);
+  assert.equal(rung(dir, 2), 0);
+});
+
+test('state.json held open by another program: the save waits and the bridge keeps running', windowsOnly, async () => {
+  const { b } = fakeBridge();
+  const handled = () => JSON.parse(fs.readFileSync(b.stateFile, 'utf8')).handled.sess;
+  const strip = (id) => frame(id, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0'], ['C', id, 'send', 't1', 'hello']]);
+  b.onFrame(strip(1));
+  await until(() => fs.existsSync(b.stateFile), 'the first save lands');
+  const release = await holdOpen(b.stateFile);
+  try {
+    b.onFrame(strip(2));
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(handled(), 1, 'the old state is whole');
+    assert.deepEqual(fs.readdirSync(b.stateDir).filter((f) => f.endsWith('.tmp')), []);
+  } finally {
+    await release();
+  }
+  await until(() => handled() === 2, 'the held-back save lands');
+  b.stop();
+});
+
 test('activity labels and pending questions', () => {
   const proj = {
     runs: [{ id: 'r1' }],
@@ -259,7 +472,7 @@ test('activity labels and pending questions', () => {
   assert.equal(p.questions[0].opts[0].v, 'X');
 });
 
-test('lua serializer escapes strings and keeps utf-8', () => {
+test('lua serializer escapes strings and keeps utf-8', needsLua, () => {
   const s = luaValue({ a: 'x"y\\z\n\u0001', b: ['é', 1.5, true], 'not ident': 1, end: 2 });
   const file = path.join(os.tmpdir(), `t3wow-ser-${process.pid}.lua`);
   fs.writeFileSync(file, Buffer.from(`local t = ${s}; io.write(t.a, "|", t.b[1], "|", t["not ident"], "|", t["end"])`, 'latin1'));

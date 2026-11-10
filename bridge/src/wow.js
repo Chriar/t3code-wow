@@ -6,8 +6,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { desktop } from './windows.js';
 
 const FLAVOR = '_forever_';
+const WIN_WOW_PATH = /[A-Za-z]:[\\/][^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g;
 // Omarchy's Battle.net installer (omarchy-install-gaming-battlenet) uses this prefix.
 export const OMARCHY_PREFIX = path.join(os.homedir(), 'Games/battlenet');
 
@@ -102,7 +104,7 @@ function battlenetWowDirs(root) {
   const dirs = [];
   try {
     const db = fs.readFileSync(path.join(root, 'drive_c/ProgramData/Battle.net/Agent/product.db'), 'latin1');
-    for (const m of db.matchAll(/[A-Za-z]:[\\/][^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g)) {
+    for (const m of db.matchAll(WIN_WOW_PATH)) {
       const d = winToLinux(root, m[0]);
       if (d && !dirs.includes(d)) dirs.push(d);
     }
@@ -171,9 +173,38 @@ function macInstalls(system = '/') {
   return { forever, wowOnly, prefixes: battlenet };
 }
 
+function winInstalls(system) {
+  const at = (win) => {
+    const m = system && /^([A-Za-z]):[\\/]*(.*)$/.exec(win);
+    return m ? path.join(system, m[1].toLowerCase(), ...m[2].split(/[\\/]+/)) : path.normalize(win);
+  };
+  const folder = (name, usual) => at((!system && process.env[name]) || usual);
+  const programData = folder('ProgramData', 'C:/ProgramData');
+  const programFiles = [folder('ProgramFiles(x86)', 'C:/Program Files (x86)'), folder('ProgramFiles', 'C:/Program Files')];
+  const appData = (!system && process.env.APPDATA) || path.join(os.homedir(), 'AppData/Roaming');
+  const dirs = [];
+  try {
+    const db = fs.readFileSync(path.join(programData, 'Battle.net/Agent/product.db'), 'latin1');
+    for (const m of db.matchAll(WIN_WOW_PATH)) dirs.push(at(Buffer.from(m[0], 'latin1').toString('utf8')));
+  } catch {}
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(appData, 'Battle.net/Battle.net.config'), 'utf8'));
+    const base = cfg.Client.Install.DefaultInstallPath;
+    if (base) dirs.push(at(`${base}/World of Warcraft`));
+  } catch {}
+  for (const dir of programFiles) dirs.push(path.join(dir, 'World of Warcraft'));
+  const forever = [];
+  const wowOnly = [];
+  classify(dirs, forever, wowOnly);
+  const battlenet = [...programFiles.map((dir) => path.join(dir, 'Battle.net')), path.join(programData, 'Battle.net')].filter((p) => fs.existsSync(p));
+  return { forever, wowOnly, prefixes: battlenet };
+}
+
+const INSTALLS = { darwin: macInstalls, win32: winInstalls };
+
 // { forever: [...WoW: Forever folders], wowOnly: [...WoW installs without Forever], prefixes: [...where Battle.net is] }
 export function findWowInstalls({ platform = process.platform, system } = {}) {
-  const { forever, wowOnly, prefixes } = platform === 'darwin' ? macInstalls(system) : linuxInstalls();
+  const { forever, wowOnly, prefixes } = (INSTALLS[platform] || linuxInstalls)(system);
   return { forever, wowOnly: wowOnly.filter((w) => !forever.some((f) => f.startsWith(w + path.sep))), prefixes };
 }
 
@@ -185,6 +216,9 @@ export function addonsDir(wowDir) {
   return path.join(wowDir, 'Interface', 'AddOns');
 }
 
+// The client's process names on Windows, x86 and ARM.
+const WIN_CLIENT_NAMES = ['Wow', 'Wow-arm64'];
+
 // A Forever client's command line under Wine: Wow.exe, or Wow-ARM64.exe on ARM
 // (Battle.net installs it as Wow-ARM64.exe and launches it as Wow-arm64.exe).
 export function isForeverClient(cmdline) {
@@ -192,9 +226,14 @@ export function isForeverClient(cmdline) {
 }
 
 // The running Forever client: { pid, startTicks } or null. startTicks (from
-// /proc/<pid>/stat, or the start time on macOS) distinguishes a restarted client
-// that happens to reuse a pid.
-export function findWowProcess() {
+// /proc/<pid>/stat, or the start time on macOS and Windows) distinguishes a restarted
+// client that happens to reuse a pid.
+//
+// On Windows a helper that can't answer reads as no client.
+export async function findWowProcess() {
+  if (process.platform === 'win32') {
+    return Promise.all(WIN_CLIENT_NAMES.map((name) => desktop.processes(name))).then((found) => pickWinProcess(found.flat()), () => null);
+  }
   if (process.platform === 'darwin') return findMacProcess();
   let entries;
   try {
@@ -237,6 +276,13 @@ export function parseMacProcesses(text) {
 function findMacProcess() {
   const r = spawnSync('ps', ['-axww', '-o', 'pid=,lstart=,comm='], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
   return r.status === 0 ? parseMacProcesses(r.stdout) : null;
+}
+
+// The Forever client among the programs the helper found. startTicks is when the process
+// started, in ms since 1970 UTC.
+export function pickWinProcess(procs) {
+  const p = procs.find((x) => isForeverClient(x.path || ''));
+  return p ? { pid: p.pid, startTicks: p.startMs } : null;
 }
 
 export function processKey(p) {

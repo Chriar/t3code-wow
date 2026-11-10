@@ -15,7 +15,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { RS, US } from './codec.js';
 import { StripCapture } from './capture.js';
-import { SlotBank } from './slots.js';
+import { SlotBank, replaceFile, FileInUse } from './slots.js';
 import { threadStatus, isUnread, effortOf } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
@@ -253,11 +253,14 @@ export class Bridge {
   saveState() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
-      fs.mkdirSync(this.stateDir, { recursive: true });
-      const tmp = this.stateFile + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(this.persist));
-      fs.renameSync(tmp, this.stateFile);
+      if (!this.saveStateNow()) this.saveState();
     }, 250);
+  }
+
+  saveStateNow() {
+    clearTimeout(this.saveTimer);
+    fs.mkdirSync(this.stateDir, { recursive: true });
+    return replaceFile(this.stateFile, JSON.stringify(this.persist));
   }
 
   // ---------------------------------------------------------------------------
@@ -278,7 +281,7 @@ export class Bridge {
     this.t3.on('change', (ev) => this.onT3Change(ev));
     this.t3.on('config', () => this.markDirty('minor'));
     this.t3.start();
-    this.checkProcess();
+    await this.checkProcess();
     this.procTimer = setInterval(() => this.checkProcess(), 4000);
     this.statusTimer = setInterval(() => this.writeStatus(), 3000);
     // Pick up new Omarchy usage records (the shell's Agents panel refreshes them).
@@ -295,10 +298,19 @@ export class Bridge {
     clearTimeout(this.publishTimer);
     this.t3.stop();
     this.voice.hush();
+    this.saveStateNow();
   }
 
   checkProcess() {
-    const proc = findWowProcess();
+    this.checkInFlight ??= findWowProcess()
+      .then((proc) => this.onProcess(proc))
+      .finally(() => {
+        this.checkInFlight = null;
+      });
+    return this.checkInFlight;
+  }
+
+  onProcess(proc) {
     const key = processKey(proc);
     const was = this.proc;
     this.proc = proc;
@@ -306,7 +318,7 @@ export class Bridge {
       // A new client process: its sound cache is empty, so every signal file is
       // reusable. Reset them and start counting again.
       this.log(`WoW client started (pid ${proc.pid}); resetting live-update signals`);
-      this.bank.resetSignals();
+      if (!this.bank.resetSignals()) return;
       this.persist.processKey = key;
       this.persist.sigCounter = 1;
       this.persist.raised = [];
@@ -1004,6 +1016,16 @@ export class Bridge {
         this.persist.slotGuess = predicted + 1;
       }
     } catch (err) {
+      if (err instanceof FileInUse) {
+        if (Date.now() - (this.inUseLoggedAt || 0) >= 30000) {
+          this.inUseLoggedAt = Date.now();
+          this.log(`update waiting: ${err.message}`);
+        }
+        this.lastDigest = null;
+        this.lastPublishAt = Date.now();
+        this.markDirty('important');
+        return false;
+      }
       this.log(`publish failed: ${err.message}`);
       return false;
     }

@@ -21,6 +21,13 @@ export function tokenClaims(token) {
 }
 
 export function findT3Cli() {
+  if (process.platform === 'win32') {
+    // T3 Code writes a batch file here.
+    const home = os.homedir();
+    const known = [process.env.T3_CLI, path.join(home, '.t3/bin/t3.cmd'), path.join(home, '.local/bin/t3.cmd'), path.join(home, '.local/bin/t3.exe')];
+    const onPath = (process.env.PATH || '').split(path.delimiter).filter(Boolean).flatMap((dir) => [path.join(dir, 't3.cmd'), path.join(dir, 't3.exe')]);
+    return [...known, ...onPath].find((c) => c && fs.existsSync(c)) || null;
+  }
   const candidates = [
     process.env.T3_CLI,
     path.join(os.homedir(), '.local/bin/t3'),
@@ -38,6 +45,39 @@ export function findT3Cli() {
   return null;
 }
 
+// Anything else is refused, because inside a cmd.exe command line & | < > ^ % ! and "
+// all mean something, and no quoting covers them all.
+const CMD_SAFE_ARG = /^[A-Za-z0-9 _.,:=@+\/()-]*$/;
+// A batch file's own path sits inside quotes, where cmd.exe still reads these three.
+// Measured: accents, spaces, & and ' in a profile folder's name all arrive intact.
+const CMD_UNSAFE_PATH = /["%!]/;
+
+/**
+ * What to hand execFile or spawnSync to run the t3 CLI: [file, args, options].
+ *
+ * Node refuses to start a .cmd or .bat directly (EINVAL), and T3 Code's command on
+ * Windows is `t3.cmd`. A batch file runs as
+ *
+ *   cmd.exe /d /s /c ""C:\Users\me\.t3\bin\t3.cmd" "auth" "session" "issue" ..."
+ *
+ * with windowsVerbatimArguments, so Node adds no quoting of its own. Everything else,
+ * on every platform, runs as it is.
+ *
+ * @param {string} cli  From findT3Cli().
+ * @param {string[]} args
+ * @param {NodeJS.Platform} [platform]
+ * @returns {[file: string, args: string[], options: { windowsVerbatimArguments?: boolean, windowsHide?: boolean }]}
+ * @throws {Error} when cmd.exe would read part of the path or of an argument as a command.
+ */
+export function t3Command(cli, args, platform = process.platform) {
+  if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(cli)) return [cli, args, {}];
+  if (CMD_UNSAFE_PATH.test(cli)) throw new Error(`can't run ${cli}: cmd.exe reads % and ! in a batch file's path as variables. Set T3_CLI to a copy of it in a folder without them.`);
+  const refused = args.find((arg) => !CMD_SAFE_ARG.test(arg));
+  if (refused !== undefined) throw new Error(`can't pass ${JSON.stringify(refused)} to ${path.basename(cli)}: cmd.exe would read part of it as a command`);
+  const line = [cli, ...args].map((part) => `"${part}"`).join(' ');
+  return [process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${line}"`], { windowsVerbatimArguments: true, windowsHide: true }];
+}
+
 export function mintToken({ label = 'WoW bridge' } = {}) {
   const cli = findT3Cli();
   if (!cli) return Promise.reject(new Error('could not find the `t3` command; open T3 Code once so it installs it'));
@@ -50,7 +90,8 @@ export function mintToken({ label = 'WoW bridge' } = {}) {
     '--token-only',
   ];
   return new Promise((resolve, reject) => {
-    execFile(cli, args, { timeout: 120000 }, (err, stdout, stderr) => {
+    const [file, argv, options] = t3Command(cli, args);
+    execFile(file, argv, { timeout: 120000, ...options }, (err, stdout, stderr) => {
       if (err) return reject(new Error(`t3 auth session issue failed: ${(stderr || err.message).trim()}`));
       const token = stdout.split('\n').map((s) => s.trim()).filter(Boolean).pop();
       if (!token || !tokenClaims(token)) return reject(new Error('t3 auth session issue printed no token'));

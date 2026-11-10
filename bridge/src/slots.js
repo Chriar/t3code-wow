@@ -61,10 +61,50 @@ export const LONG_SILENT_WAV = (() => {
   return b;
 })();
 
-function atomicWrite(file, content) {
+// Windows refuses to rename over a file another program has open, whatever sharing
+// that program asked for (measured). Linux and macOS never refuse, so they get no
+// retries. Windows rounds each wait up to its 15.6 ms timer tick, so a file that stays
+// in use blocks the event loop for about 30 ms (measured).
+const RETRY_MS = process.platform === 'win32' ? [10, 10] : [];
+const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
+export const sleepSync = (ms) => void Atomics.wait(sleeper, 0, 0, ms);
+
+// Another program kept a file open past the retries. Nothing is half-written when
+// this is thrown. Only Windows can throw it.
+export class FileInUse extends Error {
+  constructor(file) {
+    super(`${path.basename(path.dirname(file))}/${path.basename(file)} is in use`);
+  }
+}
+
+// A reader sees the old content or the new, never part of either. Returns false when
+// the target was still in use after the retries, with the target untouched and the
+// temp file gone. Any other error throws at once.
+export function replaceFile(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
+  for (const wait of [0, ...RETRY_MS]) {
+    if (wait) sleepSync(wait);
+    try {
+      fs.writeFileSync(tmp, content);
+      fs.renameSync(tmp, file);
+      return true;
+    } catch (err) {
+      if (!RETRY_MS.length || !IN_USE.has(err.code)) throw err;
+    }
+  }
+  try {
+    fs.rmSync(tmp, { force: true });
+  } catch {}
+  return false;
+}
+
+function setBell(file, rung) {
+  const want = rung ? LONG_SILENT_WAV : '';
+  try {
+    if (fs.statSync(file).size === want.length) return;
+  } catch {}
+  if (!replaceFile(file, want)) throw new FileInUse(file);
 }
 
 export class SlotBank {
@@ -182,7 +222,7 @@ export class SlotBank {
     const content = luaAssignment('T3Code_Inbox', value);
     for (const i of slotIndexes) {
       if (i < 1 || i > this.slots) continue;
-      atomicWrite(this.slotFile(i), content);
+      if (!replaceFile(this.slotFile(i), content)) throw new FileInUse(this.slotFile(i));
     }
     return content.length;
   }
@@ -191,31 +231,31 @@ export class SlotBank {
     return this.sigFile(BELL_BASE + ((((k - 1) % BELLS) + BELLS) % BELLS));
   }
 
-  // Fill bell k and empty the one four behind it, so the addon's look-ahead window
+  // Empty the bell four behind k, then fill bell k, so the addon's look-ahead window
   // (k .. k+3) only ever sees bells raised after it last loaded.
   raise(k) {
-    atomicWrite(this.bellFile(k), LONG_SILENT_WAV);
-    atomicWrite(this.bellFile(k - 4), '');
+    setBell(this.bellFile(k - 4), false);
+    setBell(this.bellFile(k), true);
     return true;
   }
 
   // The self-test controls and empty bells; safe to call at every start.
   prepareBells() {
-    const long = this.sigFile(CTL_LONG);
-    try {
-      if (fs.statSync(long).size !== LONG_SILENT_WAV.length) atomicWrite(long, LONG_SILENT_WAV);
-    } catch {
-      atomicWrite(long, LONG_SILENT_WAV);
-    }
-    atomicWrite(this.sigFile(CTL_EMPTY), '');
+    setBell(this.sigFile(CTL_LONG), true);
+    setBell(this.sigFile(CTL_EMPTY), false);
   }
 
   // Bells are re-read on every play, so at a client restart we only need them empty.
+  // Returns false while a bell is still in use, which leaves it rung.
   resetSignals() {
+    let empty = true;
     for (let i = 0; i < BELLS; i++) {
       try {
-        atomicWrite(this.sigFile(BELL_BASE + i), '');
-      } catch {}
+        setBell(this.sigFile(BELL_BASE + i), false);
+      } catch (err) {
+        if (err instanceof FileInUse) empty = false;
+      }
     }
+    return empty;
   }
 }

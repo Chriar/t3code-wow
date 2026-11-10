@@ -1,9 +1,9 @@
 # Architecture
 
 ```
- WoW: Forever (Wine or macOS)                          t3code-wow bridge (Node, user service)
+ WoW: Forever (Wine, macOS, Windows)                   t3code-wow bridge (Node, user service)
  ┌──────────────────────────────┐   pixels   ┌────────────────────────────────────────┐
- │ T3Code addon                 │──────────▶│ capture.js  grim, KWin, import, macOS   │
+ │ T3Code addon                 │──────────▶│ capture.js  reads the strip's pixels    │
  │  Transport.lua  strip, queue │            │ bridge.js   commands, pacing, snapshots │
  │  Store.lua      snapshot     │◀──────────│ slots.js    Inbox.lua into T3Code_S###  │
  │  UI/*           window,      │   files    │             Signals/NNNNN.wav           │
@@ -45,7 +45,9 @@ nonce(12)  ChaCha20(records)  HMAC-SHA-256(version, seq, nonce, ciphertext)[0..8
 
 - The bridge makes a random master key per install (`~/.local/state/t3code-wow/strip.key`,
   mode 0600) and derives an encryption key and a MAC key from it. Both go into every
-  snapshot it writes to the slots. Slot files are never on screen.
+  snapshot it writes to the slots. Slot files are never on screen. Windows has no file
+  modes, so there the key relies on the profile folder, which other standard accounts
+  can't open.
 - The addon keeps the keys in file-local variables in `Transport.lua`. They aren't on
   the exported `T3Code` table and aren't saved. The slot global is cleared on load.
 - Nonces are a per-load prefix (time and random bytes) plus a counter, and a frame is
@@ -106,6 +108,8 @@ retries with backoff.
 
 **KDE Plasma.** KWin doesn't implement wlroots' screencopy, so `grim` can't read it. The bridge uses KWin's D-Bus API through `busctl` (part of systemd): `org.kde.krunner1.Match` on `/WindowsRunner` lists windows captioned "World of Warcraft", `getWindowInfo` gives each one's frame geometry, pid, desktops and minimized state, and `org.kde.KWin.ScreenShot2.CaptureArea` writes the corner's raw pixels (a QImage format KWin names in its reply) into a pipe the bridge passes as fd 3. It asks for native resolution so the cells aren't resampled on a scaled display, and searches 40 pixels down for a windowed game's title bar, as on macOS. Screenshots use `CaptureWindow`, which renders the window even while it's covered. On KWin 6.8 these calls work without the `X-KDE-DBUS-Restricted-Interfaces` grant that Spectacle's desktop file carries; if a later KWin refuses them, the error shows in `t3code-wow status`.
 
+**Windows.** Node can't call the Windows API, and starting PowerShell for each capture costs 0.3 to 1.3 s, far too slow for a loop that runs every 150 ms. So the bridge keeps one Windows PowerShell 5.1 process running, which compiles `bridge/src/windows-helper.cs` with `Add-Type` when it starts. Both ship with Windows, so there's nothing to install or build. The bridge writes this helper one line of JSON per request, and reads back one line of JSON followed by the raw pixels. The helper is per-monitor DPI aware and reads the game window's client area in physical pixels. The client area starts exactly at the game's UI origin, so there's no title bar to search past. The helper reads the strip by copying that corner of the screen. While another window covers the corner, or the corner is off screen, it uses `PrintWindow` instead, which has Windows render the game window itself. Screenshots always use `PrintWindow`, so a window on top of the game never ends up in the picture. The same helper lists the running programs, which is how the bridge finds the client. What was measured, and what hasn't been checked in game, is under [Windows notes](#windows-notes).
+
 ## Bridge → game: slots and signals
 
 `T3Code_S001…S1200` (1,200 by default) are load-on-demand addons grouped under T3Code in
@@ -154,6 +158,8 @@ if one rang. Eight bells rotate forever, with no per-session limit. They live at
 `Signals/03991–03998.wav`; `03999` (always long) and `04000` (always empty) are the
 self-test controls. These names already existed when the client started, which
 matters because the client only knows files that existed at launch.
+
+**A file the game has open.** Windows refuses to replace a file another program has open, whatever sharing that program asked for (measured). Linux and macOS never refuse. So every slot and bell is written to a temp file and renamed into place, and on Windows a refused rename is retried for about 30 ms and then given up, with the old file intact. A publish that meets a file in use rings no bell and moves no counter, so the same publish is due again at the usual pacing. Bells follow two rules on every platform. A bell is written only when it's in the wrong state, and bell `k-4` is emptied before bell `k` is filled. A ring that stops between the two writes then leaves no bell rung that shouldn't be, and ringing again finishes it. A new game client isn't counted as started until every bell is empty.
 
 If game sound is entirely off, the self-test fails and the addon falls back to
 loading a slot on a timer (3 s while you're using the window, 20 s open, 90 s closed).
@@ -204,3 +210,36 @@ bars, and avoids Blizzard's `Menu` (it caused "blocked action" errors). LB/RB sw
 tabs, X reads aloud, Y dictates, and the right stick scrolls the transcript. Forever has
 no on-screen keyboard, so text input uses dictation, quick replies and option buttons.
 The game menu gets a T3 Code button, and a controller chord opens the window.
+
+## Windows notes
+
+Windows support is new. This section says how the bridge runs in the background there, what was measured, and what hasn't been checked in a real game yet.
+
+**In the background.** The bridge reads the screen, so it has to run in the player's own desktop session, which a Windows service can't. A Task Scheduler task starts it when the user signs in. A normal user can register that task without administrator rights. The task runs `conhost.exe --headless node t3code-wow.js supervise`, because conhost is the only way found to start Node from a task without a window. The supervisor (`bridge/src/windows-service.js`) starts the bridge, sends its output to `bridge.log`, and starts it again 3 seconds after any exit. Task Scheduler can't do that restart here, because conhost exits with code 0 whatever Node's exit code was. Stopping the task ends conhost and nothing under it. So the supervisor and the bridge both watch conhost's pid and stop when it's gone, and the bridge saves its state as it stops.
+
+**One bridge at a time.** Two bridges would both read the same strip frame and run the same command, so a message could reach the agent twice. The supervisor records itself and its bridge in `running.json` in the state folder, each as a pid and a start time, because Windows gives a pid to another program once its process is gone. A new supervisor doesn't start while a recorded one is running. Install, restart and uninstall wait for the recorded supervisor and bridge to be gone before they start or delete anything, and end them after 8 seconds if they're still there.
+
+**What hides the strip.** A screen copy reads whatever is on screen. So before each copy the helper asks Windows which window is at 279 points over the strip: one every 16 pixels, and along the strip's far edges. If the window at any point isn't the game, the helper reads the game through `PrintWindow` instead. That catches every window at least 16 pixels wide and high over any part of the strip. A smaller window can sit between the points and hide part of the strip. An overlay that another program draws over the game's top-left corner, such as a frame-rate counter, also hides the strip while it's there, as on the other platforms. Windows doesn't report a click-through overlay as the window at a point, so the helper doesn't see one as covering.
+
+**A game that isn't responding.** `PrintWindow` waits for the game's own window thread, however long that takes. So a game window that isn't answering can't be read through it, and the helper can do nothing else while it waits. Once Windows reports the window as not responding, the helper doesn't call `PrintWindow`: a covered corner reads as hidden, and a screenshot is refused with that reason. Windows puts its own stand-in window over a game in that state, which counts as a cover. Windows takes 5 seconds to report it. A `PrintWindow` call made in those 5 seconds still waits, and the bridge's time limit on the request ends the helper if the game takes longer.
+
+**Measured** on one PC (Windows 11, Node.js 26, T3 Code Nightly 0.1.8, a 3840x2160 HDR display):
+
+- Reading the corner of the game window, 2992x1683, with HDR on: a screen copy took 17 ms and `PrintWindow` 45 ms, both with correct colours. `PrintWindow` renders the whole window, so its cost grows with the window. That is why the screen copy is the normal path.
+- A strip drawn in a test window decoded through both paths. `T3WOW_SCREEN_TEST` runs that check (see CONTRIBUTING.md).
+- Asking which window is at the 279 points took 0.46 ms for each grab. A 16x16 window was seen at every place tried over the strip. A 15x15 window between the points wasn't seen. With a click-through overlay over the whole corner, the helper copied the screen and the strip wasn't found.
+- A test window whose thread slept for 9 seconds: Windows reported it as not responding 5.0 seconds in, and its stand-in window was over it 0.06 seconds later. A `PrintWindow` call made 1 second in returned 8 seconds later, when the thread woke. With the check and nothing else over the corner, no grab during the sleep took longer than 8 ms. With another window over the corner, the grab at the start of the sleep waited out its 4-second limit, which ended the helper once. The next helper answered that the corner was hidden.
+- Renaming over a file another program has open failed in every sharing mode that program could ask for.
+- After the task was stopped, conhost was gone about 1 second later, and the Node processes under it kept running until they noticed. A Node program's own children ended the moment it exited.
+- With a stand-in bridge under the real task, a restart left 0.3 to 0.8 seconds between the old bridge stopping and the new one starting. With the waiting taken out, the two ran together for 1.5 seconds.
+- With the real bridge under the supervisor and no game running, everything was gone 0.7 seconds after the process the supervisor watches ended, and the bridge had saved its state.
+- `Register-ScheduledTask` took the task from a normal user's shell and kept its settings: no time limit, runs on battery, one instance at a time.
+- T3 Code's `t3.cmd` ran through `cmd.exe`, and created and revoked a session.
+
+**Not checked in a real game yet.** Each of these needs a session in game, and the results belong here:
+
+- Whether the strip decodes in Windowed and in Windowed (Fullscreen) mode, with display scaling above 100 percent, and on a second monitor.
+- Whether a message sent while another window covers the game's corner still arrives.
+- How the client opens slot and bell files, and how often a publish has to wait for one.
+- Whether the bells ring, or the addon's self-test fails and it loads slots on a timer.
+- Whether the game's own voice reads replies aloud.

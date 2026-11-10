@@ -12,6 +12,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for how changes are reviewed, and [docs/
 
 Linux (Omarchy, and CachyOS with KDE Plasma, the game under Proton) and macOS (the native client) are supported. Keep platform differences inside the module that owns them: `wow.js` (install folders and the running client: Wine prefixes, including those Faugus Launcher and Lutris record, and `/proc` on Linux; Battle.net's records and `ps` on macOS), `capture.js` (`grim` on Hyprland, KWin's D-Bus API through `busctl` on KDE Plasma, `import` on X11; CoreGraphics' window list through JXA and `screencapture` on macOS, which needs the Screen Recording permission), `voice.js` (`spd-say`/`espeak-ng`, or `say`), `envs.js` (the Tailscale CLI inside `Tailscale.app` on macOS) and the service in `bin/t3code-wow.js` (a systemd user unit or a launchd agent). On macOS, use only tools that ship with the system: nothing to compile or install. On KDE Plasma, likewise use only what Plasma and systemd ship.
 
+Windows 10 and 11 (the native client) is new and the least tested, and the link hasn't been checked in a real game yet (see "Windows notes" in docs/ARCHITECTURE.md). Its differences sit in the same owning modules: `wow.js` (Battle.net's records and the running `Wow.exe`), `capture.js` (the `windows` backend), `auth.js` (T3 Code's `t3.cmd`, run through `cmd.exe`), `voice.js` (no desktop voice or dictation yet) and the service (a logon task). Two modules hold what only Windows needs: `windows.js` with `windows-helper.cs` (one long-lived PowerShell helper for the game window, its pixels and the list of running programs) and `windows-service.js` (the logon task and the supervisor it runs). On Windows, use only what ships with Windows 10 and 11, with nothing to compile or install. Keep `windows-helper.cs` to C# 5, because the compiler that ships with Windows stops there. Never start a bridge while another may still be running, because two would run the same command twice. `windows-service.js` is where that is checked.
+
 ## Measured limits of the game client
 
 These come from measurements on live Forever clients. They look like bugs or workarounds; they aren't.
@@ -46,13 +48,14 @@ Run what covers your change, once, and read the output:
 - `cd bridge && npm test` for anything in `bridge/`, including protocol and crypto. The crypto tests run the addon's Lua under both `lua5.1` (with `tools/bitstub.lua`, unsigned like WoW) and `luajit` (signed), and must agree with Node.
 - `lua5.1 tools/smoke.lua …` and `luajit tools/smoke.lua …` (see CONTRIBUTING.md) for anything in `addon/`.
 - Bridge tests must pass a temporary `stateDir`; never let a test touch `~/.local/state/t3code-wow`.
+- The bridge suite must pass on Windows too. There, the tests that need `lua5.1` skip when it isn't installed, and a test that registers a logon task uses a throwaway name, never `t3code-wow`.
 - The stub's widget methods come from the client's API documentation. If a real method is missing, add it to the stub; don't call methods the client doesn't have.
 
 When to add a test: only for logic that could regress unnoticed (parsing, the bell rules, crypto agreement, a controller edge case). Don't add tests that restate a string or config value.
 
 ## Verifying UI changes
 
-Tests don't show what the player sees. Anything visible must be checked in game: `./install.sh` from the checkout, `/reload`, then look. (`t3code-wow sync` re-copies the installed addon, not your edits.) Use the controller too when navigation is involved. Attach screenshots or a short recording to the PR, as CONTRIBUTING.md describes. `t3code-wow probe` captures the strip corner when the link itself is in question.
+Tests don't show what the player sees. Anything visible must be checked in game: `./install.sh` from the checkout (`install.ps1` on Windows), `/reload`, then look. (`t3code-wow sync` re-copies the installed addon, not your edits.) Use the controller too when navigation is involved. Attach screenshots or a short recording to the PR, as CONTRIBUTING.md describes. `t3code-wow probe` captures the strip corner when the link itself is in question.
 
 ## Style
 

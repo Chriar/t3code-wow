@@ -11,7 +11,7 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Omarchy (`omarchy-version`), T3 Code Nightly (`t3 --version`), t3code-wow (`t3code-wow status`), and your controller if it's involved.
+      description: Omarchy (`omarchy-version`) or Windows (`winver`), T3 Code Nightly (`t3 --version`), t3code-wow (`t3code-wow status`), and your controller if it's involved.
       placeholder: e.g. Omarchy 4.5.0, t3 v0.1.7-nightly.20261102, t3code-wow 0.1.0, Xbox Series controller
     validations:
       required: true

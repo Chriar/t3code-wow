@@ -12,6 +12,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { decodeImage, parsePPM, parseBMP, parseQImage, encodePNG, CELLS_PER_ROW, MAX_ROWS } from './codec.js';
+import { desktop } from './windows.js';
 
 // A service may start before the session exports WAYLAND_DISPLAY; find the socket.
 function captureEnv() {
@@ -37,7 +38,7 @@ function run(cmd, args, { maxBuffer = 32 * 1024 * 1024, timeout = 4000, input = 
 }
 
 function which(bin) {
-  for (const dir of (process.env.PATH || '').split(':')) {
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
     const p = path.join(dir, bin);
     try {
       fs.accessSync(p, fs.constants.X_OK);
@@ -250,7 +251,7 @@ async function kwinCapture(method, signature, args, options, timeout = 4000) {
 }
 
 export const SCREEN_PERMISSION_HELP =
-  `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge with: launchctl kickstart -k gui/${process.getuid()}/t3code-wow`;
+  `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge with: launchctl kickstart -k gui/${process.getuid?.()}/t3code-wow`;
 
 // ---------------------------------------------------------------------------
 
@@ -267,11 +268,18 @@ export class StripCapture {
     this.winCache = null; // { pid, at, win }: window lookups cost an osascript run or several D-Bus calls
     this.macAsked = false;
     this.tmpDir = null;
+    if (process.platform === 'win32') {
+      desktop.report = (message) => {
+        if (message !== this.lastError) this.log(message);
+        this.lastError = message;
+      };
+    }
   }
 
   resolveBackend() {
     if (this.backend !== 'auto') return this.backend;
     if (process.platform === 'darwin') return 'macos';
+    if (process.platform === 'win32') return 'windows';
     if (/(^|:)KDE(:|$)/.test(process.env.XDG_CURRENT_DESKTOP || '') && which('busctl')) return 'kwin';
     if (process.env.WAYLAND_DISPLAY || hyprSocket()) {
       if (hyprSocket() && which('grim')) return 'hyprland';
@@ -351,6 +359,11 @@ export class StripCapture {
     this.stats.captures++;
     if (backend === 'none') throw new Error('no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11); on KDE Plasma the bridge uses busctl from systemd');
     const px = StripCapture.stripPixels(4);
+    if (backend === 'windows') {
+      const res = await desktop.grab(wowPid, { ...px, region: this.manualRegion });
+      if (res.status === 'hidden') this.stats.notVisible++;
+      return res;
+    }
     if (backend === 'macos') {
       let region = this.manualRegion;
       let scale = 1;
@@ -433,6 +446,7 @@ export class StripCapture {
   async screenshot(wowPid) {
     const backend = this.resolveBackend();
     const name = `wow-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
+    if (backend === 'windows') return { ...(await desktop.screenshot(wowPid)), name };
     if (backend === 'kwin') {
       // KWin renders the window itself, so this works even while it's covered.
       const win = await this.kwinWindow(wowPid);
