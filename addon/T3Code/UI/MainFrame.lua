@@ -456,7 +456,11 @@ function M:Send(textOverride)
 	elseif ns.viewId and not textOverride and ns.Transcript:CustomAnswer(text) then
 		ns.db.drafts[ns.viewId] = nil
 	elseif ns.viewId then
-		ns.Transport:Send("send", ns.viewId, text)
+		if ns.db.settings.steerFollowUps then
+			ns.Transport:Send("send", ns.viewId, text, "steer")
+		else
+			ns.Transport:Send("send", ns.viewId, text)
+		end
 		ns.Transcript:AddLocalEcho(ns.viewId, text)
 		ns.db.drafts[ns.viewId] = nil
 	else
@@ -684,7 +688,8 @@ function M:Refresh()
 			header.Model:SetPoint("RIGHT", withEffort and header.Effort or anchor, "LEFT", -4, 0)
 			local pickers = (withModel and header.Model:GetWidth() + 4 or 0) + (withEffort and header.Effort:GetWidth() + 4 or 0)
 			header.Text:SetPoint("RIGHT", (t.s == "settled" and -200 or -110) - pickers, 0)
-			self:SetPlaceholder(t.s == "working" and "Queue a follow-up  (Shift+Enter for a new line)" or "Message the agent  (Shift+Enter for a new line)")
+			local busy = ns.db.settings.steerFollowUps and "Steer the agent" or "Queue a follow-up"
+			self:SetPlaceholder((t.s == "working" and busy or "Message the agent") .. "  (Shift+Enter for a new line)")
 		else
 			f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
 			header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))

@@ -98,6 +98,7 @@ local DEFAULTS = {
 		gameMenu = true,
 		minimapButton = true,
 		dictateSend = false,
+		steerFollowUps = true,
 		quietInstances = true,
 		windowScale = "auto",
 		padChord = "auto",

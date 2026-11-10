@@ -80,6 +80,11 @@ ns.Main.composer._text = "Please run the tests"
 ns.Main:Send()
 check(#ns.Transport.queue >= 1, "command queued")
 check(ns.Transport:Payload():find("Please run the tests", 1, true) ~= nil, "message in strip payload")
+check(ns.Transport.queue[#ns.Transport.queue].args[3] == "steer", "follow-ups ask to steer by default")
+ns.db.settings.steerFollowUps = false
+ns.Main:Send("And the linter")
+check(ns.Transport.queue[#ns.Transport.queue].args[3] == nil, "with steering off, a follow-up names no mode, so the bridge queues it")
+ns.db.settings.steerFollowUps = true
 check(ns.Transcript.echo[ns.viewId] ~= nil, "local echo shown")
 
 -- Pages
