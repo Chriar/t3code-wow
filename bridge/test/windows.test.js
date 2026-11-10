@@ -2,15 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Desktop, launchHelper, splitFrames } from '../src/windows.js';
+import { Desktop, launchHelper, pickWinWindow, splitFrames } from '../src/windows.js';
 
 const windowsOnly = { skip: process.platform !== 'win32' && 'needs Windows PowerShell' };
 const FAKE = fileURLToPath(new URL('./fake-windows-helper.mjs', import.meta.url));
 
 const wow = { pid: 4242, path: 'D:\\Games\\World of Warcraft\\_forever_\\Wow.exe', startMs: Date.UTC(2026, 10, 9, 9, 27, 45) };
 const explorer = { pid: 77, path: 'C:\\Windows\\explorer.exe', startMs: Date.UTC(2026, 10, 9, 8, 0, 0) };
+const win = (hwnd, pid, extra = {}) => ({ hwnd, pid, className: 'waApplication Window', title: 'World of Warcraft', visible: true, minimized: false, x: 503, y: 260, width: 2992, height: 1683, ...extra });
+const corner = { width: 672, height: 192 };
 
 // A Desktop on the stand-in helper, and every helper it has started.
 function fakeDesktop(scenario, options = {}) {
@@ -20,6 +24,12 @@ function fakeDesktop(scenario, options = {}) {
     return helpers.at(-1);
   };
   return { desktop: new Desktop({ launch, ...options }), helpers };
+}
+
+// A file the stand-in helper writes each request to, and a reader for it.
+function requestLog() {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-helper-')), 'requests');
+  return { file, read: () => fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line)) };
 }
 
 // Desktop pauses before it starts another helper, so ask until one answers.
@@ -134,6 +144,77 @@ test('a command that asked the desktop one question exits, and its helper goes w
   const helper = Number(printed);
   assert.ok(helper > 0, 'the command started a helper');
   await until(() => !alive(helper), 'the helper is gone');
+});
+
+test("the game window: the client's own over a same-named one, the largest of its windows, never a hidden or tiny one", () => {
+  assert.deepEqual(pickWinWindow([win(1, 9), win(2, 5, { width: 300, height: 200 }), win(3, 5)], 5), { found: true, hwnd: 3 });
+  assert.deepEqual(pickWinWindow([win(1, 5, { visible: false }), win(2, 5, { width: 40, height: 40 })], 5), { found: false });
+  assert.deepEqual(pickWinWindow([win(1, 9)], undefined), { found: true, hwnd: 1 }, 'by title when the pid is unknown');
+  assert.deepEqual(pickWinWindow([win(1, 9, { title: 'Battle.net' })], 5), { found: false });
+});
+
+test('a minimized game is still found, so the bridge can say hidden and not missing', () => {
+  const minimized = win(1, 5, { minimized: true, width: 0, height: 0 });
+  assert.deepEqual(pickWinWindow([minimized], 5), { found: true, hwnd: 1 });
+  assert.deepEqual(pickWinWindow([minimized, win(2, 5, { width: 640, height: 480 })], 5), { found: true, hwnd: 2 }, 'a window that is showing wins');
+});
+
+test('grab: the pixels of the game window, which is looked up once for many grabs', async () => {
+  const log = requestLog();
+  const { desktop } = fakeDesktop({ windows: [win(1, 9), win(7, 5)], pixel: [10, 200, 30], log: log.file });
+  for (let i = 0; i < 3; i++) {
+    const res = await desktop.grab(5, corner);
+    assert.deepEqual([res.status, res.via, res.image.width, res.image.height, res.image.data.length], ['ok', 'screen', 672, 192, 672 * 192 * 3]);
+    assert.deepEqual([...res.image.data.subarray(0, 3), ...res.image.data.subarray(-3)], [10, 200, 30, 10, 200, 30]);
+  }
+  const grab = { op: 'grab', hwnd: 7, w: 672, h: 192 };
+  assert.deepEqual(log.read(), [{ op: 'windows', pid: 5, title: 'World of Warcraft' }, grab, grab, grab]);
+  desktop.stop();
+});
+
+test('grab: a window that closed reads as no-window, and the next grab looks again', async () => {
+  const log = requestLog();
+  const { desktop } = fakeDesktop({ windows: [win(7, 5)], states: { 7: 'gone' }, log: log.file });
+  assert.deepEqual(await desktop.grab(5, corner), { status: 'no-window' });
+  assert.deepEqual(await desktop.grab(5, corner), { status: 'no-window' });
+  assert.deepEqual(log.read().map((r) => r.op), ['windows', 'grab', 'windows', 'grab']);
+  desktop.stop();
+
+  const none = fakeDesktop({ windows: [] });
+  assert.deepEqual(await none.desktop.grab(5, corner), { status: 'no-window' });
+  none.desktop.stop();
+});
+
+test('grab: minimized, or on another virtual desktop, reads as hidden', async () => {
+  for (const state of ['minimized', 'cloaked']) {
+    const { desktop } = fakeDesktop({ windows: [win(7, 5)], states: { 7: state } });
+    assert.deepEqual(await desktop.grab(5, corner), { status: 'hidden' }, state);
+    desktop.stop();
+  }
+});
+
+test('grab: with a configured region, the screen is copied there and no window is looked up', async () => {
+  const log = requestLog();
+  const { desktop } = fakeDesktop({ via: 'screen', log: log.file });
+  const res = await desktop.grab(5, { ...corner, region: { x: -1080, y: -300 } });
+  assert.deepEqual([res.status, res.image.data.length], ['ok', 672 * 192 * 3]);
+  assert.deepEqual(log.read(), [{ op: 'grab', x: -1080, y: -300, w: 672, h: 192 }]);
+  desktop.stop();
+});
+
+test('screenshot: the JPEG the helper made, or the reason there is none', async () => {
+  const jpeg = [0xff, 0xd8, 0xff, 0xd9];
+  const showing = fakeDesktop({ windows: [win(7, 5)], jpeg });
+  assert.deepEqual(await showing.desktop.screenshot(5), { data: Buffer.from(jpeg), mime: 'image/jpeg' });
+  showing.desktop.stop();
+
+  const minimized = fakeDesktop({ windows: [win(7, 5)], states: { 7: 'minimized' } });
+  await assert.rejects(minimized.desktop.screenshot(5), /minimized/);
+  minimized.desktop.stop();
+
+  const missing = fakeDesktop({ windows: [] });
+  await assert.rejects(missing.desktop.screenshot(5), /find the game window/);
+  missing.desktop.stop();
 });
 
 test("the real helper compiles under Windows PowerShell 5.1 and finds this test's own process", windowsOnly, async () => {
