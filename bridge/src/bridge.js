@@ -302,12 +302,12 @@ export class Bridge {
   }
 
   checkProcess() {
-    this.checking ??= findWowProcess()
+    this.checkInFlight ??= findWowProcess()
       .then((proc) => this.onProcess(proc))
       .finally(() => {
-        this.checking = null;
+        this.checkInFlight = null;
       });
-    return this.checking;
+    return this.checkInFlight;
   }
 
   onProcess(proc) {
