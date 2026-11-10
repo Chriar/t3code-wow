@@ -8,7 +8,7 @@ import path from 'node:path';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-home-'));
 process.env.HOME = home;
 delete process.env.WINEPREFIX;
-const { findWowInstalls: findAny, parseMacProcesses } = await import('../src/wow.js');
+const { findWowInstalls: findAny, parseMacProcesses, isForeverClient } = await import('../src/wow.js');
 const findWowInstalls = () => findAny({ platform: 'linux' });
 
 function touch(p, content = '') {
@@ -29,6 +29,19 @@ test("finds Forever in Omarchy's Battle.net prefix", () => {
   touch(path.join(omarchy(), 'drive_c/Program Files (x86)/Battle.net/Battle.net.exe'));
   touch(path.join(omarchy(), 'drive_c/Program Files (x86)/World of Warcraft/_forever_/Wow.exe'));
   assert.deepEqual(findWowInstalls().forever, [path.join(omarchy(), 'drive_c/Program Files (x86)/World of Warcraft/_forever_')]);
+});
+
+test('finds the ARM client before its first launch', () => {
+  reset();
+  touch(path.join(omarchy(), 'drive_c/Program Files (x86)/World of Warcraft/_forever_/Wow-ARM64.exe'));
+  assert.deepEqual(findWowInstalls().forever, [path.join(omarchy(), 'drive_c/Program Files (x86)/World of Warcraft/_forever_')]);
+});
+
+test('recognizes the running Forever client on x86 and ARM, not Retail', () => {
+  assert.ok(isForeverClient('C:\\Program Files (x86)\\World of Warcraft\\_forever_\\Wow.exe\0-launcherlogin\0'));
+  assert.ok(isForeverClient('C:\\Program Files (x86)\\World of Warcraft\\_forever_\\Wow-arm64.exe\0-launcherlogin\0-uid\0wowf\0'));
+  assert.ok(!isForeverClient('C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Wow-arm64.exe\0'));
+  assert.ok(!isForeverClient('C:\\Program Files (x86)\\World of Warcraft\\_forever_\\Utils\\WowVoiceProxy.exe\0'));
 });
 
 test("finds a custom install folder from Battle.net's records, including another drive", () => {

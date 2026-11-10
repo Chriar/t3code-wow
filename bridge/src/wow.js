@@ -123,7 +123,7 @@ function classify(wowDirs, forever, wowOnly) {
   for (const wow of wowDirs) {
     if (!fs.existsSync(wow)) continue;
     const dir = path.join(wow, FLAVOR);
-    if (['Wow.exe', 'World of Warcraft.app', 'Interface'].some((f) => fs.existsSync(path.join(dir, f)))) {
+    if (['Wow.exe', 'Wow-ARM64.exe', 'World of Warcraft.app', 'Interface'].some((f) => fs.existsSync(path.join(dir, f)))) {
       if (!forever.includes(dir)) forever.push(dir);
     } else if (!wowOnly.includes(wow)) {
       wowOnly.push(wow);
@@ -185,6 +185,12 @@ export function addonsDir(wowDir) {
   return path.join(wowDir, 'Interface', 'AddOns');
 }
 
+// A Forever client's command line under Wine: Wow.exe, or Wow-ARM64.exe on ARM
+// (Battle.net installs it as Wow-ARM64.exe and launches it as Wow-arm64.exe).
+export function isForeverClient(cmdline) {
+  return /_forever_[\\/]+Wow(-arm64)?\.exe/i.test(cmdline);
+}
+
 // The running Forever client: { pid, startTicks } or null. startTicks (from
 // /proc/<pid>/stat, or the start time on macOS) distinguishes a restarted client
 // that happens to reuse a pid.
@@ -204,7 +210,7 @@ export function findWowProcess() {
     } catch {
       continue;
     }
-    if (!/_forever_[\\/]+Wow\.exe/i.test(cmd)) continue;
+    if (!isForeverClient(cmd)) continue;
     try {
       const stat = fs.readFileSync(`/proc/${e}/stat`, 'latin1');
       const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
