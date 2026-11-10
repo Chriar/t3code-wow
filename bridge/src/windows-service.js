@@ -34,6 +34,7 @@ const PARENT_CHECK_MS = 1000;
 const BRIDGE_STOP_MS = 3000;
 const STOP_GRACE_MS = 8000;
 const POLL_MS = 100;
+const RECORD_WITHIN_MS = 1000;
 
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
 const sleep = (ms) => void Atomics.wait(sleeper, 0, 0, ms);
@@ -319,8 +320,13 @@ export async function supervise({ command, logFile, runningFile, parent, restart
 
   const me = { pid: process.pid, startMs: Math.round(Date.now() - process.uptime() * 1000) };
   const record = (bridge) => {
-    const text = JSON.stringify({ supervisor: me, bridge });
-    for (let tries = 0; tries < 30 && !replaceFile(runningFile, text); tries++);
+    let why = 'another program has it open';
+    try {
+      if (replaceWithin(RECORD_WITHIN_MS, runningFile, JSON.stringify({ supervisor: me, bridge }))) return;
+    } catch (err) {
+      why = err.message;
+    }
+    note(`couldn't record who is running in ${path.basename(runningFile)}: ${why}. A restart or an update reads that file, and may not wait for this bridge to stop.`);
   };
   const stop = new AbortController();
   const stopping = new Promise((resolve) => stop.signal.addEventListener('abort', resolve, { once: true }));
@@ -339,6 +345,22 @@ export async function supervise({ command, logFile, runningFile, parent, restart
     note(`the bridge ${how}; starting it again in ${restartMs / 1000} s`);
     await delay(restartMs, undefined, { signal: stop.signal }).catch(() => {});
   }
+}
+
+/**
+ * replaceFile() gives up on a file in use after about 30 ms, which a virus scanner
+ * reading the file can outlast. This asks again until `ms` have passed.
+ * @param {number} ms
+ * @param {string} file
+ * @param {string} content
+ * @returns {boolean} False when the file was in use to the end.
+ */
+function replaceWithin(ms, file, content) {
+  const end = Date.now() + ms;
+  while (!replaceFile(file, content)) {
+    if (Date.now() >= end) return false;
+  }
+  return true;
 }
 
 /**

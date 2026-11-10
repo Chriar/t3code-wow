@@ -156,6 +156,15 @@ test('a second supervisor does not start while the first is running its bridge',
   }
 });
 
+test("a record that can't be written is in the log, and the bridge runs all the same", async () => {
+  const box = sandbox();
+  fs.mkdirSync(box.runningFile, { recursive: true });
+  const { stopped } = supervisor(box, []);
+  await until(() => box.events('start').length === 1, 'the bridge is running');
+  await stopped();
+  assert.match(fs.readFileSync(box.logFile, 'utf8'), /couldn't record who is running/);
+});
+
 test('a record left by a supervisor that is gone does not stop the next one, even when another program has its pid now', async () => {
   const box = sandbox();
   record(box, { supervisor: { pid: process.pid, startMs: startedMs() - 3600000 }, bridge: null });
