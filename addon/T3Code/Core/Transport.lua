@@ -251,9 +251,15 @@ function T:Apply(data, bootstrap)
 		self.lastData = GetTime()
 		self.bridgeNow = data.now
 		local hadModels = ns.Store.modelsHash
+		local hadView, hadProjects = ns.Store.viewKey, ns.Store.projectsKey
 		ns.Store:Apply(data)
 		-- Tell the bridge we have the new list, or it keeps sending it with every update.
 		if ns.Store.modelsHash ~= hadModels then self:Touch() end
+		-- And tell it when a part it may leave out is gone from here (the player went
+		-- back, say), or it keeps believing we still have it and never resends it.
+		if (hadView ~= "" and ns.Store.viewKey == "") or (hadProjects ~= "" and ns.Store.projectsKey == "") then
+			self:Touch()
+		end
 	end
 	ns:Fire("LinkChanged")
 	return fresh
@@ -320,7 +326,8 @@ function T:Payload()
 	local hello = Codec.Record({
 		"H", 1, db.session, ns.ui, self.slotCursor, db.sigNext or 1, db.gen or 0,
 		self:Flags(), link and ns.viewId or "", ns.version, self.slotCount,
-		ns.Store.modelsHash or "",
+		ns.Store.modelsHash or "", ns.Store.listKey or "", ns.Store.projectsKey or "",
+		ns.Store.viewKey or "",
 	})
 	if not link then return hello end
 	local limit = Codec.MAX_PAYLOAD - Codec.SEAL_OVERHEAD

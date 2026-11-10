@@ -11,6 +11,11 @@ local Store = {
 	-- change (we report modelsHash in the hello), so they outlive each snapshot.
 	models = {},
 	modelsHash = "",
+	-- What the bridge last sent for the parts it may leave out of an update. We report
+	-- them in the hello, so a snapshot that omits them is still complete for us.
+	listKey = "",
+	projectsKey = "",
+	viewKey = "",
 }
 ns.Store = Store
 
@@ -22,8 +27,17 @@ local GROUP_OF = {
 Store.GROUP_OF = GROUP_OF
 
 function Store:Apply(data)
+	local prev = self.data
+	-- A snapshot may leave out the transcript (60 KB) and the project list when the
+	-- bridge knows, from our hello, that we already hold them. `same` names the parts
+	-- it left out; a part that is neither sent nor named is empty now (no thread
+	-- selected, no projects). Keeping the old table costs nothing: the next full
+	-- snapshot replaces it.
+	local same = type(data.same) == "string" and data.same or ""
+	local sentProjects, sentView = data.projects ~= nil, data.view ~= nil
 	data.threads = data.threads or {}
-	data.projects = data.projects or {}
+	data.projects = data.projects or (same:find("p", 1, true) and prev.projects) or {}
+	if not data.view and same:find("v", 1, true) then data.view = prev.view end
 	data.usage = data.usage or {}
 	data.bridge = data.bridge or {}
 	local before = self.byId
@@ -32,6 +46,26 @@ function Store:Apply(data)
 	for _, p in ipairs(data.projects) do projectsById[p.id] = p end
 	self.data, self.byId, self.projectsById = data, byId, projectsById
 	self.applied = self.applied + 1
+	if type(data.x) == "table" then
+		-- Only record the hash of a part this snapshot actually carried: the bridge's
+		-- hash describes what it sent, and a part it left out is still the old one.
+		-- A part that was neither sent nor kept is gone, so claim nothing for it.
+		self.listKey = data.x.l ~= nil and tostring(data.x.l) or self.listKey
+		if sentProjects then
+			self.projectsKey = tostring(data.x.p or "")
+		elseif not same:find("p", 1, true) then
+			self.projectsKey = ""
+		end
+		if sentView then
+			self.viewKey = tostring(data.x.v or "")
+		elseif not same:find("v", 1, true) then
+			self.viewKey = ""
+		end
+	else
+		-- An older bridge sends everything in every snapshot, so a new one is a new
+		-- version of both parts.
+		self.listKey, self.projectsKey, self.viewKey = "gen:" .. self.applied, "gen:" .. self.applied, "gen:" .. self.applied
+	end
 	if type(data.models) == "table" and type(data.models.g) == "table" then
 		-- Flattened per machine, in T3's order: { i, s, l, p = provider, r = levels }.
 		local models = {}

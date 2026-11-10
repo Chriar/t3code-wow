@@ -799,22 +799,32 @@ end
 -- Read-only: this frame never enables gamepad input.
 local watcher = CreateFrame("Frame")
 L.watcher = watcher
+-- Twenty reads a second is plenty to catch a chord (a press lasts far longer than
+-- this) and costs a twentieth of reading the controller every frame.
+local CHORD_EVERY = 0.05
+local nextRead = 0
 local backWasDown = false
 watcher:SetScript("OnUpdate", function()
 	if not L.enabled or (ns.Gamepad and ns.Gamepad.capturing) then
 		backWasDown = false
 		return
 	end
+	local now = GetTime()
+	if now < nextRead then return end
+	nextRead = now + CHORD_EVERY
 	local held = ReadButtons()
 	if not held then return end
 	local back = held.PADBACK
-	if back and not backWasDown and held.PADLTRIGGER and held.PADRTRIGGER then
+	local triggers = held.PADLTRIGGER and held.PADRTRIGGER
+	if back and not backWasDown and triggers then
 		L.firedAt = GetTime()
 		ns.Safe(function() L:Open() end)()
 		-- The game's own Back handler ran first; drop its "nothing to focus" error.
 		if UIErrorsFrame and UIErrorsFrame.Clear then pcall(UIErrorsFrame.Clear, UIErrorsFrame) end
 	end
-	backWasDown = back
+	-- Latch Back only once the chord could have fired: reading the controller 20 times a
+	-- second, a player who presses Back a moment before the triggers still gets it.
+	backWasDown = back and (triggers or backWasDown) or false
 end)
 
 function L:SetupChord()

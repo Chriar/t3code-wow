@@ -57,6 +57,18 @@ local function Font(name, fallback)
 	return _G[name] and name or fallback
 end
 
+-- A line's second row, and the colour of its dot.
+local function SubText(t)
+	if t.s == "working" then
+		return string.format("- %s (%s)", t.l or "Working", ns.Duration(time() - (t.st or time()))), 0.29, 0.62, 1
+	elseif t.s == "input" or t.s == "plan" then
+		return "- " .. ns.Color("orange", t.l or "Needs you"), 1, 0.6, 0.2
+	elseif t.s == "failed" then
+		return "- " .. ns.Color("red", "Failed"), 1, 0.25, 0.25
+	end
+	return "- " .. ns.Color("green", "Finished") .. ns.Color("grey", " " .. ns.Ago(t.u)), 0.3, 0.9, 0.3
+end
+
 local function CreateLine(parent)
 	local b = CreateFrame("Button", nil, parent)
 	b:RegisterForClicks("LeftButtonUp")
@@ -179,6 +191,7 @@ function K:Refresh(resetPosition)
 		if (t.s == "open" or t.s == "failed") and t.un then table.insert(entries, t) end
 	end
 	local state = ns.Transport:BridgeState()
+	self.bridgeState = state
 	local notice
 	if state == "exhausted" then
 		notice = { text = "Live updates paused", sub = "Click to /reload", action = function() ReloadUI() end }
@@ -216,21 +229,9 @@ function K:Refresh(resetPosition)
 			b.Title:SetText(t.title)
 			local hc = OBJECTIVE_TRACKER_COLOR and OBJECTIVE_TRACKER_COLOR.Header
 			if hc then b.Title:SetTextColor(hc.r, hc.g, hc.b) else b.Title:SetTextColor(1, 0.82, 0) end
-			local sub
-			if t.s == "working" then
-				sub = string.format("- %s (%s)", t.l or "Working", ns.Duration(time() - (t.st or time())))
-				b.Dot:SetVertexColor(0.29, 0.62, 1)
-			elseif t.s == "input" or t.s == "plan" then
-				sub = "- " .. ns.Color("orange", t.l or "Needs you")
-				b.Dot:SetVertexColor(1, 0.6, 0.2)
-			elseif t.s == "failed" then
-				sub = "- " .. ns.Color("red", "Failed")
-				b.Dot:SetVertexColor(1, 0.25, 0.25)
-			else
-				sub = "- " .. ns.Color("green", "Finished") .. ns.Color("grey", " " .. ns.Ago(t.u))
-				b.Dot:SetVertexColor(0.3, 0.9, 0.3)
-			end
+			local sub, r, g, bl = SubText(t)
 			b.Sub:SetText(sub)
+			b.Dot:SetVertexColor(r, g, bl)
 		end
 		if notice then
 			shown = shown + 1
@@ -255,8 +256,9 @@ ns:On("Login", function()
 	K:Refresh()
 end)
 
--- Follow the tracker when it collapses, empties or comes back.
-C_Timer.NewTicker(0.25, ns.Safe(function()
+-- Follow the tracker when it collapses, empties or comes back. Twice a second is
+-- plenty for a collapse the player can see.
+C_Timer.NewTicker(0.5, ns.Safe(function()
 	if not K.frame then return end
 	local otf = ObjectiveTrackerFrame
 	local resized = otf and K.attached ~= "custom" and K.attached ~= "screen" and math.abs((otf:GetWidth() or 0) - K.frame:GetWidth()) > 1
@@ -264,6 +266,27 @@ C_Timer.NewTicker(0.25, ns.Safe(function()
 end))
 ns:On("DataChanged", function() K:Refresh() end)
 ns:On("LinkChanged", function() K:Refresh() end)
+
+-- Once a second only the elapsed times change, and the link can go stale on its own
+-- clock (no update for a while) with no data arriving to say so. Watch both: the text
+-- is cheap, and a state change rebuilds the section so a notice can appear.
+function K:RefreshTimers()
+	local f = self.frame
+	if not f or not f:IsShown() then return end
+	local state = ns.Transport:BridgeState()
+	if state ~= self.bridgeState then
+		self.bridgeState = state
+		K:Refresh()
+		return
+	end
+	for _, b in ipairs(f.Lines) do
+		if b:IsShown() and b.thread then
+			local sub = SubText(b.thread)
+			if sub ~= b.Sub:GetText() then b.Sub:SetText(sub) end
+		end
+	end
+end
+
 C_Timer.NewTicker(1, ns.Safe(function()
-	if K.frame and K.frame:IsShown() then K:Refresh() end
+	if K.frame and K.frame:IsShown() then K:RefreshTimers() end
 end))

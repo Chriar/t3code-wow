@@ -57,6 +57,13 @@ function loadSlot(dir, i) {
   return { gen: Number(gen), nextSig: Number(nextSig), title };
 }
 
+// One value out of a slot's snapshot, read by the same Lua the game runs.
+function slotValue(dir, i, expr) {
+  const file = path.join(dir, `T3Code_S${String(i).padStart(3, '0')}`, 'Inbox.lua');
+  const out = execFileSync('lua5.1', ['-e', `dofile(${JSON.stringify(file)}) local t = T3Code_Inbox io.write(tostring(${expr}))`]);
+  return out.toString();
+}
+
 // Size of the bell file that signal k rings (0 if empty or not created yet).
 function rung(dir, k) {
   const file = path.join(dir, 'T3Code', 'Signals', String(3991 + ((k - 1) % 8)).padStart(5, '0') + '.wav');
@@ -107,6 +114,64 @@ test('parseFrame reads hello and commands', () => {
   assert.equal(f.hello.sig, 9);
   assert.equal(f.hello.view, 'tid');
   assert.deepEqual(f.commands[0], { id: 3, verb: 'send', args: ['tid', 'hi there'] });
+});
+
+test('a publish leaves out what the addon already holds, but slots 1-3 stay complete', needsLua, () => {
+  const { b, dir } = fakeBridge();
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: 't1', hashes: {} };
+  b.views.set('t1', {
+    projection: { messages: [{ role: 'assistant', text: 'a long reply', createdAt: '2026-11-01T00:00:00Z' }], turnItems: [], runtimeRequests: [], runs: [] },
+    fetchedAt: Date.now(),
+  });
+  const first = b.buildSnapshot();
+  assert.ok(first.view && first.view.msgs.length === 1, 'the transcript is in the snapshot');
+  // Its next hello says it applied exactly this transcript and project list.
+  b.client.hashes = { list: first.x.l, projects: first.x.p, view: first.x.v };
+  assert.ok(b.publishNow('test'));
+  // Slots 1-3 are what a /reload boots from, so they always carry everything.
+  for (const i of [1, 2, 3]) {
+    assert.equal(slotValue(dir, i, 't.view and t.view.id or "none"'), 't1', `slot ${i} is complete`);
+  }
+  // The rotating slots leave out what the addon has, and say which parts those are.
+  assert.equal(slotValue(dir, 4, 't.view and t.view.id or "none"'), 'none', 'no second copy of the transcript');
+  assert.equal(slotValue(dir, 4, 't.projects and #t.projects or "none"'), 'none', 'no second copy of the projects');
+  assert.equal(slotValue(dir, 4, 't.same or ""'), 'pv');
+  assert.match(slotValue(dir, 4, '#t.threads'), /^\d+$/, 'the thread list always goes');
+  // A publish that starts again with an addon that holds nothing sends everything.
+  b.client.hashes = {};
+  b.publishNow('test');
+  assert.equal(slotValue(dir, 4, 't.view and t.view.id or "none"'), 't1', 'an addon that has it not is sent it');
+  assert.equal(slotValue(dir, 4, 't.same or ""'), '');
+  b.stop();
+});
+
+test('a part that changes and changes back is sent again, not assumed', needsLua, () => {
+  const { b, dir } = fakeBridge();
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: 't1', hashes: {} };
+  const projection = { messages: [{ role: 'assistant', text: 'one', createdAt: '2026-11-01T00:00:00Z' }], turnItems: [], runtimeRequests: [], runs: [] };
+  b.views.set('t1', { projection, fetchedAt: Date.now() });
+  const first = b.buildSnapshot();
+  b.client.hashes = { list: first.x.l, projects: first.x.p, view: first.x.v };
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), 'none', 'unchanged: left out');
+  // A reply arrives: the transcript the addon holds is now this one.
+  projection.messages.push({ role: 'assistant', text: 'two', createdAt: '2026-11-01T00:00:01Z' });
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '2', 'changed: sent');
+  // The strip stays on screen and the capture loop decodes it again; that hello was
+  // drawn before this publish, so it must not re-arm the hash the publish cleared.
+  const hello = (seq, gen) => b.onFrame(frame(seq, [['H', 1, 'sess', 'ui1', 4, 1, gen, 'o', 't1', '0.1.0', '8', '', first.x.l, first.x.p, first.x.v]]));
+  hello(50, 0);
+  assert.equal(b.client.hashes.view, null, 'an old hello does not re-arm a cleared hash');
+  // It goes back to exactly what the addon last reported. The addon holds the
+  // two-message one, so this must be sent rather than assumed.
+  projection.messages.pop();
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '1', 'back to an older hash: still sent');
+  // A hello that has applied our latest publish is trusted again.
+  hello(51, b.lastGen);
+  assert.equal(b.client.hashes.view, first.x.v, 'a confirming hello is trusted');
+  b.stop();
 });
 
 test('publish writes the next slots and bootstrap slots, then raises one signal', needsLua, () => {

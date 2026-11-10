@@ -424,10 +424,21 @@ end
 
 function T:Refresh(force)
 	if not self.scrollBox then return end
-	local v = ns.Store.data.view
 	local echo = ns.viewId and self.echo[ns.viewId]
+	-- What the rows show besides the transcript itself: quick replies and the failed
+	-- note follow the thread's status, and with no thread picked the note counts the
+	-- active threads and names the machine. None of that is part of the transcript the
+	-- bridge sends, so it goes in the key.
+	local t = ns.Store:Thread(ns.viewId)
+	local context
+	if ns.viewId then
+		context = t and ((t.s or "") .. "|" .. (t.l or "")) or "gone"
+	else
+		context = (ns.Store.listKey or "") .. "|" .. tostring((ns.Store.data.bridge or {}).host or "")
+			.. "|" .. tostring(ns.Gamepad and ns.Gamepad:IsActive())
+	end
 	local key = table.concat({
-		ns.Store.applied, tostring(ns.viewId), ns.Main.mode, tostring(v and v.id),
+		tostring(ns.viewId), ns.Store.viewKey or "", ns.Main.mode, context,
 		echo and echo.at or 0, math.floor(self:BodyWidth()),
 	}, ":")
 	if key == self.key and not force then
