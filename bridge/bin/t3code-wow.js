@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Bridge, STATE_DIR, VERSION } from '../src/bridge.js';
-import { CONFIG_DIR, mintToken, readToken, tokenClaims, findT3Cli } from '../src/auth.js';
+import { CONFIG_DIR, mintToken, readToken, tokenClaims, findT3Cli, t3Command } from '../src/auth.js';
 import { findWowInstalls, addonsDir as addonsDirOf, findWowProcess } from '../src/wow.js';
 import { SlotBank, ADDON, CTL_LONG } from '../src/slots.js';
 import { StripCapture, SCREEN_PERMISSION_HELP } from '../src/capture.js';
@@ -474,8 +474,13 @@ async function cmdUninstall(args) {
   const claims = tokenClaims(readToken() || '');
   const t3 = findT3Cli();
   if (claims?.sid && t3) {
-    const r = spawnSync(t3, ['auth', 'session', 'revoke', claims.sid], { encoding: 'utf8', timeout: 60000 });
-    if (r.status === 0) done('Revoked the bridge\'s T3 Code session');
+    // A session id t3Command() refuses is reported like any other failed revoke.
+    let revoked = false;
+    try {
+      const [file, argv, options] = t3Command(t3, ['auth', 'session', 'revoke', claims.sid]);
+      revoked = spawnSync(file, argv, { encoding: 'utf8', timeout: 60000, ...options }).status === 0;
+    } catch {}
+    if (revoked) done('Revoked the bridge\'s T3 Code session');
     else warn(`Couldn't revoke the bridge's T3 Code session; remove it with \`t3 auth session list\` (${claims.sid}).`);
   }
   for (const e of cfg.environments || []) {
