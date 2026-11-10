@@ -1065,6 +1065,13 @@ export class Bridge {
       this.log(`publish failed: ${err.message}`);
       return false;
     }
+    // This publish carried a part the addon didn't say it had. Whether it applied it is
+    // unknown until it speaks again, so don't leave that part out on a guess: if it
+    // moves back to content the addon last reported, it must be sent, not assumed.
+    if (c?.hashes) {
+      if (c.hashes.view && snapshot.x.v !== c.hashes.view) c.hashes.view = null;
+      if (c.hashes.projects && snapshot.x.p !== c.hashes.projects) c.hashes.projects = null;
+    }
     for (const r of this.results) r.sent = true;
     this.lastGen = gen;
     this.persist.gen = gen;

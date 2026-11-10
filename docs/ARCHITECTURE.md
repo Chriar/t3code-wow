@@ -82,7 +82,7 @@ C  id  verb  args…                      (one per queued command)
 - `session` is persistent (SavedVariables). `ui` is new every load, so the bridge can
   tell a `/reload` happened.
 - `modelsHash` is the hash of the model list the addon holds (empty until it has one). The bridge sends the list, several KB, only while this differs from its own, so it costs one publish after a `/reload` or a change in T3 Code instead of every publish.
-- `listHash`, `projectsHash` and `viewHash` are the hashes of the thread list, the project list and the transcript the addon holds (empty until it has one). The bridge leaves the project list and the transcript (up to 60 KB) out of a publish while they still match, and names them in the snapshot's `same` field so the addon keeps them. Only a part the snapshot actually carried is recorded, so a stale hello costs one repeated section, never a missing one.
+- `listHash`, `projectsHash` and `viewHash` are the hashes of the thread list, the project list and the transcript the addon holds (empty until it has one). The bridge leaves the project list and the transcript (up to 60 KB) out of a publish while they still match, and names them in the snapshot's `same` field so the addon keeps them. Only a part the snapshot actually carried is recorded, and the bridge stops trusting a hash as soon as it publishes a different part, so a part can be repeated but never dropped.
 - `flags`:
   - `o`: window open
   - `t`: tracker on

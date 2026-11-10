@@ -661,6 +661,20 @@ do
 	check(ns.windowOpen == wasOpen, "Back on its own is left to the game")
 	WOWSTUB.padHeld = {}
 	frame()
+
+	-- Back a moment before the triggers: with a 20 Hz read the two can land on
+	-- different frames, and the chord must still fire.
+	WOWSTUB.padHeld = { PADBACK = true }
+	frame()
+	WOWSTUB.padHeld = { PADBACK = true, PADLTRIGGER = true, PADRTRIGGER = true }
+	frame()
+	check(ns.windowOpen ~= wasOpen, "Back a moment before the triggers still opens it")
+	frame()
+	frame()
+	check(ns.windowOpen ~= wasOpen, "and holding all three doesn't toggle it again")
+	if ns.windowOpen ~= wasOpen then ns.Launcher:Open() end
+	WOWSTUB.padHeld = {}
+	frame()
 end
 
 -- Tracker section follows the objective tracker, in the quest column.

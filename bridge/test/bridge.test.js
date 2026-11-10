@@ -135,6 +135,27 @@ test('a publish leaves out what the addon already holds, but slots 1-3 stay comp
   b.stop();
 });
 
+test('a part that changes and changes back is sent again, not assumed', () => {
+  const { b, dir } = fakeBridge();
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: 't1', hashes: {} };
+  const projection = { messages: [{ role: 'assistant', text: 'one', createdAt: '2026-11-01T00:00:00Z' }], turnItems: [], runtimeRequests: [], runs: [] };
+  b.views.set('t1', { projection, fetchedAt: Date.now() });
+  const first = b.buildSnapshot();
+  b.client.hashes = { list: first.x.l, projects: first.x.p, view: first.x.v };
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), 'none', 'unchanged: left out');
+  // A reply arrives: the transcript the addon holds is now this one.
+  projection.messages.push({ role: 'assistant', text: 'two', createdAt: '2026-11-01T00:00:01Z' });
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '2', 'changed: sent');
+  // It goes back to exactly what the addon last reported. The addon holds the
+  // two-message one, so this must be sent rather than assumed.
+  projection.messages.pop();
+  assert.ok(b.publishNow('test'));
+  assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '1', 'back to an older hash: still sent');
+  b.stop();
+});
+
 test('publish writes the next slots and bootstrap slots, then raises one signal', () => {
   const { b, dir } = fakeBridge();
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 1, 0, 'o', '', '0.1.0']]));
