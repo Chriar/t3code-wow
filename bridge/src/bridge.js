@@ -282,10 +282,16 @@ export class Bridge {
     this.log(`speech: ${v.tts || 'none'}; dictation: ${v.dictation || 'none'}; capture: ${this.capture.resolveBackend()}`);
     this.t3.on('state', (s, e) => {
       this.log(`T3: ${s}${e ? ` (${e})` : ''}`);
+      this.omarchyUsage.refresh(this.usageInstances());
       this.markDirty('important');
     });
     this.t3.on('change', (ev) => this.onT3Change(ev));
-    this.t3.on('config', () => this.markDirty('minor'));
+    this.t3.on('config', () => {
+      // The providers (and so the usage records to read) are only known once this
+      // arrives; the 60 s timer alone would leave the Usage tab empty for a minute.
+      this.omarchyUsage.refresh(this.usageInstances());
+      this.markDirty('minor');
+    });
     this.t3.start();
     this.checkProcess();
     this.procTimer = setInterval(() => this.checkProcess(), 4000);
@@ -857,9 +863,10 @@ export class Bridge {
       models: models && this.client?.modelsHash !== models.h ? models : undefined,
       results: this.results.slice(-8).map(({ id, ok, msg, open }) => ({ id, ok, msg, open })),
       // Short hashes of the parts a publish may leave out, and of the list the window
-      // redraws from. The addon reports them in its hello.
+      // redraws from. The addon reports them in its hello. The list also covers the
+      // machines the project filter offers, which the thread list itself doesn't.
       x: {
-        l: fingerprint({ t: list, p: projects, o: t3.olderSettled || 0 }),
+        l: fingerprint({ t: list, p: projects, o: t3.olderSettled || 0, e: t3.environments().map((e) => e.label) }),
         p: fingerprint(projects),
         v: view ? fingerprint(view) : '',
       },
