@@ -72,6 +72,7 @@ function supervisor(box, bridgeOptions, options = {}) {
 }
 
 const startedMs = () => Math.round(Date.now() - process.uptime() * 1000);
+const createdMs = () => startedMs() - 15;
 
 function fakeProcesses({ created = new Map(), gone = new Map() } = {}) {
   const ended = [];
@@ -145,7 +146,7 @@ test('a second supervisor does not start while the first is running its bridge',
   const first = supervisor(box, []);
   await until(() => box.events('start').length === 1, 'the first bridge is running');
   try {
-    const system = fakeProcesses({ created: new Map([[process.pid, startedMs() - 15]]) });
+    const system = fakeProcesses({ created: new Map([[process.pid, createdMs()]]) });
     const second = supervisor(box, [], { graceMs: 300, system });
     await assert.rejects(second.returned, /another supervisor/);
     await second.stopped().catch(() => {});
@@ -168,7 +169,7 @@ test("a record that can't be written is in the log, and the bridge runs all the 
 test('a record left by a supervisor that is gone does not stop the next one, even when another program has its pid now', async () => {
   const box = sandbox();
   record(box, { supervisor: { pid: process.pid, startMs: startedMs() - 3600000 }, bridge: null });
-  const system = fakeProcesses({ created: new Map([[process.pid, startedMs() - 15]]) });
+  const system = fakeProcesses({ created: new Map([[process.pid, createdMs()]]) });
   const { stopped } = supervisor(box, ['exit=0'], { graceMs: 300, system });
   await until(() => box.events('start').length >= 1, 'the bridge started');
   await stopped();

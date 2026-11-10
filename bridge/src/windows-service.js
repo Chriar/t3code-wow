@@ -209,6 +209,9 @@ const windows = {
 const STARTUP_MS = 60000;
 const CLOCK_SLACK_MS = 2000;
 
+/** Whether the process Windows created at `createdMs` is the recorded run, and not a later program that got its pid. */
+const isSameRun = (run, createdMs) => createdMs >= run.startMs - STARTUP_MS && createdMs <= run.startMs + CLOCK_SLACK_MS;
+
 const asRun = (value) => (Number.isInteger(value?.pid) && Number.isFinite(value?.startMs) ? { pid: value.pid, startMs: value.startMs } : null);
 
 /**
@@ -226,7 +229,7 @@ function stillRunning(file, system) {
   const created = there.length ? system.createdMs(there.map((run) => run.pid)) : new Map();
   const [supervisor, bridge] = runs.map((run) => {
     const at = run ? created.get(run.pid) : undefined;
-    return at !== undefined && at >= run.startMs - STARTUP_MS && at <= run.startMs + CLOCK_SLACK_MS ? run : null;
+    return at !== undefined && isSameRun(run, at) ? run : null;
   });
   return { supervisor, bridge };
 }
