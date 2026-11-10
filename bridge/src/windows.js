@@ -54,7 +54,7 @@ const BOOT = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_
 
 const READY_TIMEOUT_MS = 15000; // compiling takes 0.3 to 1.3 s here; a cold disk or a virus scan can take longer
 const WINDOW_CACHE_MS = 2000;
-const RESTART_AFTER_MS = [0, 1000, 2000, 5000, 15000, 30000];
+const RESTART_AFTER_MS = [1000, 2000, 5000, 15000, 30000];
 
 /**
  * @param {number} [parentPid]  The helper exits when this process is gone.
@@ -328,8 +328,8 @@ export class Desktop {
   #fail(reason) {
     this.#child?.kill();
     const waiting = this.#toIdle();
-    this.#failures++;
     this.#retryAt = Date.now() + RESTART_AFTER_MS[Math.min(this.#failures, RESTART_AFTER_MS.length - 1)];
+    this.#failures++;
     this.#lastError = reason;
     for (const request of waiting) request.reject(new Error(reason));
     this.report(reason);
