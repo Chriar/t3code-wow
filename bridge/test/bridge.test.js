@@ -274,6 +274,8 @@ test('markdown formatting', () => {
   assert.match(w, /•/);
   assert.match(w, /\|\| pipe/);
   assert.match(w, /fn\(\)/);
+  // Characters the game's fonts lack would show as boxes.
+  assert.equal(markdownToWow('game → bridge ✓ `a ≥ b` — done…'), 'game -> bridge OK |cffa8c7faa ≥ b|r — done…');
   assert.equal(markdownToSpeech('**Done**: see [docs](http://x)'), 'Done : see docs');
 });
 
