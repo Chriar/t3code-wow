@@ -4,5 +4,5 @@
 import { supervise } from '../src/windows-service.js';
 
 const [logFile, runningFile, restartMs, ...command] = process.argv.slice(2);
-await supervise({ command, logFile, runningFile, restartMs: Number(restartMs), parent: process.ppid });
+await supervise({ command, logFile, runningFile, restartMs: Number(restartMs), stopWithPid: process.ppid });
 process.exit(0);

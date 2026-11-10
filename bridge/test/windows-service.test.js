@@ -61,7 +61,7 @@ function fakeTask() {
 
 function supervisor(box, bridgeOptions, options = {}) {
   const task = fakeTask();
-  const returned = supervise({ command: box.bridge(...bridgeOptions), logFile: box.logFile, runningFile: box.runningFile, parent: task.pid, restartMs: 20, checkMs: 20, ...options });
+  const returned = supervise({ command: box.bridge(...bridgeOptions), logFile: box.logFile, runningFile: box.runningFile, stopWithPid: task.pid, restartMs: 20, checkMs: 20, ...options });
   return {
     returned,
     stopped: async () => {

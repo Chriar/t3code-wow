@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { stopWhenGone } from '../src/windows-service.js';
 
 const [journal, ...words] = process.argv.slice(2);
-const parent = Number(words[words.indexOf('--parent') + 1]);
+const stopWith = Number(words[words.indexOf('--stop-with') + 1]);
 const option = (name) => words.find((word) => word.startsWith(`${name}=`))?.split('=')[1];
 
 function alive(pid) {
@@ -29,12 +29,12 @@ const stop = (code) => {
   process.exit(code);
 };
 
-write({ event: 'start', parent, stillRunning: earlierBridges().filter(alive) });
+write({ event: 'start', stopWith, stillRunning: earlierBridges().filter(alive) });
 console.log(`fake bridge ${process.pid} started`);
 
 if (option('exit') !== undefined) {
   setTimeout(() => stop(Number(option('exit'))), Number(option('live') || 0));
 } else {
-  if (!words.includes('deaf')) stopWhenGone(parent, () => setTimeout(() => stop(0), Number(option('slow') || 0)), 100);
+  if (!words.includes('deaf')) stopWhenGone(stopWith, () => setTimeout(() => stop(0), Number(option('slow') || 0)), 100);
   setInterval(() => {}, 1000);
 }

@@ -362,12 +362,12 @@ async function cmdRun(args) {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  if (args.parent) stopWhenGone(Number(args.parent), stop);
+  if (args['stop-with']) stopWhenGone(Number(args['stop-with']), stop);
   await bridge.start();
 }
 
 async function cmdSupervise() {
-  await supervise({ command: bridgeCommand(), logFile: path.join(STATE_DIR, 'bridge.log'), runningFile: RUNNING_FILE, parent: process.ppid });
+  await supervise({ command: bridgeCommand(), logFile: path.join(STATE_DIR, 'bridge.log'), runningFile: RUNNING_FILE, stopWithPid: process.ppid });
   process.exit(0);
 }
 

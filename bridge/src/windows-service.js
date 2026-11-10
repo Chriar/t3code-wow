@@ -30,7 +30,7 @@ import { POWERSHELL, whatPowerShellSaid } from './windows.js';
 const TASK = 't3code-wow';
 const SYSTEM32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 const LOG_ROTATE_BYTES = 1024 * 1024;
-const PARENT_CHECK_MS = 1000;
+const GONE_CHECK_MS = 1000;
 const BRIDGE_STOP_MS = 3000;
 const STOP_GRACE_MS = 8000;
 const POLL_MS = 100;
@@ -252,7 +252,7 @@ function waitForStop(file, graceMs, system = windows) {
  * @param {() => void} onGone
  * @param {number} [everyMs]
  */
-export function stopWhenGone(pid, onGone, everyMs = PARENT_CHECK_MS) {
+export function stopWhenGone(pid, onGone, everyMs = GONE_CHECK_MS) {
   const timer = setInterval(() => {
     if (exists(pid)) return;
     clearInterval(timer);
@@ -274,9 +274,9 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
  * still running then has outlived its supervisor, which Windows should not have
  * allowed, and is ended.
  *
- * It runs until `parent` is gone. The bridge is told to watch the same process, so it
- * is stopping too, and gets a moment to finish. Whoever called this then exits, which
- * ends anything the bridge left running.
+ * It runs until the process `stopWithPid` is gone. The bridge is told to watch the same
+ * process, so it is stopping too, and gets a moment to finish. Whoever called this then
+ * exits, which ends anything the bridge left running.
  *
  * The log is opened for appending each time the bridge starts. If it has grown past
  * 1 MB by then, it's first renamed to `<logFile>.1`, replacing the previous one. The
@@ -285,18 +285,18 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
  *
  * @param {object} options
  * @param {string[]} options.command  [node, t3code-wow.js, 'run']. The child also gets
- *   `--parent <parent>`.
+ *   `--stop-with <stopWithPid>`.
  * @param {string} options.logFile
  * @param {string} options.runningFile  Where this supervisor records who is running.
- * @param {number} options.parent  The pid whose end means "stop": the logon task's conhost.
+ * @param {number} options.stopWithPid  The pid whose end means "stop": the logon task's conhost.
  * @param {number} [options.restartMs]
  * @param {number} [options.graceMs]
- * @param {number} [options.checkMs]  How often to look whether `parent` is still there.
+ * @param {number} [options.checkMs]  How often to look whether that process is still there.
  * @param {Processes} [options.system]
  * @returns {Promise<void>}
  * @throws {Error} when another supervisor is running.
  */
-export async function supervise({ command, logFile, runningFile, parent, restartMs = 3000, graceMs = STOP_GRACE_MS, checkMs = PARENT_CHECK_MS, system = windows }) {
+export async function supervise({ command, logFile, runningFile, stopWithPid, restartMs = 3000, graceMs = STOP_GRACE_MS, checkMs = GONE_CHECK_MS, system = windows }) {
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
   fs.mkdirSync(path.dirname(runningFile), { recursive: true });
   const note = (text) => {
@@ -327,11 +327,11 @@ export async function supervise({ command, logFile, runningFile, parent, restart
   };
   const stop = new AbortController();
   const stopping = new Promise((resolve) => stop.signal.addEventListener('abort', resolve, { once: true }));
-  stopWhenGone(parent, () => stop.abort(), checkMs);
+  stopWhenGone(stopWithPid, () => stop.abort(), checkMs);
 
   record(null);
   while (!stop.signal.aborted) {
-    const bridge = startBridge([...command, '--parent', String(parent)], logFile);
+    const bridge = startBridge([...command, '--stop-with', String(stopWithPid)], logFile);
     record(bridge.pid ? { pid: bridge.pid, startMs: Date.now() } : null);
     const how = await Promise.race([bridge.ended, stopping]);
     if (stop.signal.aborted) {
