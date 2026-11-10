@@ -66,6 +66,7 @@ export class Voice {
 
   dictationHint(platform = process.platform) {
     if (platform === 'darwin') return "Dictation isn't available on macOS yet.";
+    if (platform === 'win32') return "Dictation isn't available on Windows yet.";
     return 'No dictation backend found; pick one in Omarchy > Setup > Defaults > Dictation.';
   }
 
@@ -91,7 +92,8 @@ export class Voice {
     this.hush();
     let child;
     if (engine.kind === 'custom') {
-      child = spawn('/bin/sh', ['-c', engine.cmd], { stdio: ['pipe', 'ignore', 'ignore'] });
+      // Node picks the shell: /bin/sh -c as before, and cmd.exe on Windows.
+      child = spawn(engine.cmd, { shell: true, stdio: ['pipe', 'ignore', 'ignore'] });
       child.stdin.end(text);
     } else if (engine.kind === 'spd') {
       const args = ['--wait', '-e'];

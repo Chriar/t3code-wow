@@ -56,7 +56,7 @@ import { fileURLToPath } from 'node:url';
 
 /** @typedef {{ head: Record<string, any>, data: Buffer }} Frame  One reply from the helper. */
 
-const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+export const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const HELPER_SRC = fileURLToPath(new URL('./windows-helper.cs', import.meta.url));
 
 // A command string, not a script file, so the execution policy doesn't apply. The
@@ -131,7 +131,7 @@ const NO_SHOT = {
 
 // PowerShell prints an error as its message, hard-wrapped at the width of a console
 // nobody sees, then where in the command it happened.
-const whatPowerShellSaid = (stderr) => stderr.split(/\r?\nAt line:/)[0].replace(/\r?\n/g, '').trim().slice(0, 300);
+export const whatPowerShellSaid = (stderr) => stderr.split(/\r?\nAt line:/)[0].replace(/\r?\n/g, '').trim().slice(0, 300);
 
 /**
  * The Windows desktop, through one long-lived helper process.

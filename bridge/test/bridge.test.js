@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan } from '../src/bridge.js';
+import { holdOpen } from './hold-open.mjs';
 import { SlotBank, FileInUse, LONG_SILENT_WAV } from '../src/slots.js';
 import { luaValue } from '../src/luaser.js';
 import { markdownToWow, markdownToSpeech } from '../src/format.js';
@@ -273,27 +274,6 @@ async function until(done, what) {
 }
 
 const windowsOnly = { skip: process.platform !== 'win32' && 'only Windows refuses to replace a file another program has open' };
-
-// Another process opens the file for reading and lets others read it, but not write,
-// replace or delete it. Resolves to a function that closes it again.
-function holdOpen(file) {
-  const powershell = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-  const script = "$f = [IO.File]::Open($env:T3WOW_HOLD, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('held'); [void][Console]::In.ReadLine(); $f.Close()";
-  const child = spawn(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
-    stdio: ['pipe', 'pipe', 'inherit'],
-    windowsHide: true,
-    env: { ...process.env, T3WOW_HOLD: file },
-  });
-  const closed = new Promise((resolve) => child.once('exit', resolve));
-  return new Promise((resolve, reject) => {
-    child.once('error', reject);
-    closed.then(() => reject(new Error(`couldn't hold ${file} open`)));
-    child.stdout.once('data', () => resolve(() => {
-      child.stdin.end();
-      return closed;
-    }));
-  });
-}
 
 test('a ring that stops halfway leaves no stale bell rung, and ringing again finishes it', () => {
   const dir = tempAddons(2);

@@ -13,13 +13,20 @@ import { SlotBank, ADDON, CTL_LONG } from '../src/slots.js';
 import { StripCapture, SCREEN_PERMISSION_HELP } from '../src/capture.js';
 import { decodeImage } from '../src/codec.js';
 import { identify, discoverTailscale, mintRemote, revokeRemote, saveToken, readTokenData, tokenFile } from '../src/envs.js';
+import { logonTask, supervise, stopWhenGone } from '../src/windows-service.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ROOT = path.resolve(HERE, '..');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const MAC = process.platform === 'darwin';
+const WIN = process.platform === 'win32';
 const DATA_DIR = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 't3code-wow');
 const BIN_LINK = path.join(os.homedir(), '.local/bin/t3code-wow');
+// On Windows a symlink needs Developer Mode or an administrator, and a .js file doesn't
+// run by name. So install.ps1 writes a one-line .cmd instead, into a folder Windows puts
+// on every user's PATH.
+const BIN_SHIM = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData/Local'), 'Microsoft/WindowsApps/t3code-wow.cmd');
+const RERUN = WIN ? 'run the install command again' : 'run ./install.sh again';
 const DEFAULT_SLOTS = 1200;
 
 const C = process.stdout.isTTY
@@ -83,13 +90,13 @@ function resolveWowDir(args, cfg) {
   if (forever.length) return forever[0];
   const where = '\nIf it\'s somewhere else, pass --wow "/path/to/World of Warcraft".';
   if (wowOnly.length) {
-    throw new Error(`found World of Warcraft at ${wowOnly[0]}, but not WoW: Forever. Install Forever from Battle.net (it's a separate game version), launch it once, then run ./install.sh again.${where}`);
+    throw new Error(`found World of Warcraft at ${wowOnly[0]}, but not WoW: Forever. Install Forever from Battle.net (it's a separate game version), launch it once, then ${RERUN}.${where}`);
   }
   if (prefixes.length) {
-    throw new Error(`found Battle.net (${prefixes[0]}) but no World of Warcraft. Install WoW: Forever from Battle.net, launch it once, then run ./install.sh again.${where}`);
+    throw new Error(`found Battle.net (${prefixes[0]}) but no World of Warcraft. Install WoW: Forever from Battle.net, launch it once, then ${RERUN}.${where}`);
   }
-  if (MAC) throw new Error(`couldn't find World of Warcraft. Install Battle.net from blizzard.com, install WoW: Forever from it and launch it once, then run ./install.sh again.${where}`);
-  throw new Error(`couldn't find Battle.net. On Omarchy, install it with omarchy-install-gaming-battlenet; on CachyOS, add Battle.net to Faugus Launcher or Lutris. Then install WoW: Forever from it, launch it once, and run ./install.sh again.${where}`);
+  if (MAC || WIN) throw new Error(`couldn't find World of Warcraft. Install Battle.net from blizzard.com, install WoW: Forever from it and launch it once, then ${RERUN}.${where}`);
+  throw new Error(`couldn't find Battle.net. On Omarchy, install it with omarchy-install-gaming-battlenet; on CachyOS, add Battle.net to Faugus Launcher or Lutris. Then install WoW: Forever from it, launch it once, and ${RERUN}.${where}`);
 }
 
 // The bridge runs as a systemd user service on Linux and a launchd agent on macOS.
@@ -193,7 +200,15 @@ const launchd = {
   },
 };
 
-const service = MAC ? launchd : systemd;
+const RUNNING_FILE = path.join(STATE_DIR, 'running.json');
+
+// systemd is the fallback for every platform without an entry. On Windows the task runs
+// `supervise`, which keeps `run` going the way systemd and launchd do themselves.
+const SERVICES = {
+  darwin: () => launchd,
+  win32: () => logonTask({ file: path.join(CONFIG_DIR, 't3code-wow.task.xml'), command: [...bridgeCommand().slice(0, 2), 'supervise'], runningFile: RUNNING_FILE }),
+};
+const service = (SERVICES[process.platform] || (() => systemd))();
 
 // Copy just the addon code (leaving Signals/ and generated media alone).
 function syncAddon(addonsDir) {
@@ -352,7 +367,17 @@ async function cmdRun(args) {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+  // Only the Windows supervisor passes --parent: the process whose end means the logon
+  // task was stopped. Stopping the task ends nothing else, so the bridge watches for it.
+  if (args.parent) stopWhenGone(Number(args.parent), stop);
   await bridge.start();
+}
+
+// What the Windows logon task runs. It isn't in help(), because nobody types it.
+async function cmdSupervise() {
+  await supervise({ command: bridgeCommand(), logFile: path.join(STATE_DIR, 'bridge.log'), runningFile: RUNNING_FILE, parent: process.ppid });
+  // Windows ends a bridge that is still running along with this process.
+  process.exit(0);
 }
 
 function ago(ms) {
@@ -419,6 +444,20 @@ async function ask(question) {
   const answer = await rl.question(question);
   rl.close();
   return /^y(es)?$/i.test(answer.trim());
+}
+
+// Whether the .cmd in BIN_SHIM is the one install.ps1 wrote: it runs the copy in DATA_DIR.
+// The file is in the console's code page, which Node can't decode, so any letters
+// outside ASCII count as the same.
+function shimIsOurs() {
+  const plain = (text) => text.replace(/[^\x20-\x7e]+/g, '?').toLowerCase();
+  try {
+    const target = /"([^"]+)"/.exec(fs.readFileSync(BIN_SHIM, 'latin1'))?.[1] || '';
+    const script = path.normalize(target.replace(/^%USERPROFILE%/i, () => os.homedir()));
+    return plain(script).startsWith(plain(`${DATA_DIR}${path.sep}`));
+  } catch {
+    return false;
+  }
 }
 
 // Remove everything install put on this computer, and revoke the bridge's sessions.
@@ -501,6 +540,7 @@ async function cmdUninstall(args) {
   try {
     if (fs.lstatSync(BIN_LINK).isSymbolicLink() && fs.readlinkSync(BIN_LINK).startsWith(DATA_DIR)) fs.rmSync(BIN_LINK);
   } catch {}
+  if (WIN && shimIsOurs()) fs.rmSync(BIN_SHIM, { force: true });
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
   done('Removed the t3code-wow command and its files');
 
@@ -618,12 +658,16 @@ function help() {
 
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
-const commands = { env: cmdEnv, install: cmdInstall, run: cmdRun, status: cmdStatus, sync: cmdSync, probe: cmdProbe, uninstall: cmdUninstall };
+const commands = { env: cmdEnv, install: cmdInstall, run: cmdRun, status: cmdStatus, sync: cmdSync, probe: cmdProbe, uninstall: cmdUninstall, supervise: cmdSupervise };
 if (!cmd || args.help || !commands[cmd]) {
   help();
   if (cmd && !commands[cmd]) process.exitCode = 1;
 } else {
   Promise.resolve(commands[cmd](args)).catch((err) => {
+    // Windows won't replace or remove a file another program has open (measured: EBUSY
+    // for a write, EPERM for a removal). Install and uninstall stop there with their
+    // settings intact, so running them again finishes the job.
+    if (WIN && ['EBUSY', 'EPERM'].includes(err.code)) err.message = `${err.dest || err.path || 'A file'} can't be changed right now: another program has it open, or this Windows account isn't allowed to write there. If World of Warcraft is running, quit it, then run this again.`;
     console.error(C.r(`✗ ${err.message}`));
     process.exitCode = 1;
   });
