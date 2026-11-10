@@ -408,7 +408,7 @@ function T:Refresh(force)
 	local v = ns.Store.data.view
 	local echo = ns.viewId and self.echo[ns.viewId]
 	local key = table.concat({
-		ns.Store.applied, tostring(ns.viewId), ns.Main.mode, tostring(v and v.id),
+		tostring(ns.viewId), ns.Store.viewKey or "", ns.Main.mode, tostring(v and v.id),
 		echo and echo.at or 0, math.floor(self:BodyWidth()),
 	}, ":")
 	if key == self.key and not force then

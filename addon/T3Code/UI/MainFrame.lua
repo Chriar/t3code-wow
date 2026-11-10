@@ -623,6 +623,14 @@ function M:SetPlaceholder(text)
 	if self.composer:GetInputText() == "" then self.composer:SetText("") end
 end
 
+-- The open thread's header line: status, project, and how long it has been running
+-- or how long ago it finished.
+function M:HeaderText(t)
+	local age = (t.s == "working" and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
+	return string.format("%s  ·  %s  ·  %s",
+		ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s)), ns.Store:ProjectName(t.p), age)
+end
+
 function M:Refresh()
 	local f = self.frame
 	if not f or not f:IsShown() then return end
@@ -670,9 +678,7 @@ function M:Refresh()
 		f.Bar.Send:SetText("Send")
 		if t then
 			f.Subtitle:SetText(t.title)
-			local status = ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s))
-			local age = (t.s == "working" and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
-			header.Text:SetText(string.format("%s  ·  %s  ·  %s", status, ns.Store:ProjectName(t.p), age))
+			header.Text:SetText(self:HeaderText(t))
 			header.Action:SetShown(true)
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
 			header.Archive:SetShown(t.s == "settled")
@@ -960,10 +966,26 @@ ns:On("CommandResult", function(r)
 	end
 end)
 
--- Live elapsed timers in the header.
+-- Live elapsed timers in the header and the visible rows. Only the text changes: the
+-- list and the transcript refresh their rows in place, so this is much cheaper than a
+-- full Refresh, which rebuilds both from the snapshot.
+function M:RefreshTimers()
+	local f = self.frame
+	if not f or not f:IsShown() then return end
+	local t = ns.Store:Thread(ns.viewId)
+	if t and self.mode == "thread" then
+		f.Pages.threads.Right.Header.Text:SetText(self:HeaderText(t))
+	end
+	ns.ThreadList:Refresh()
+	ns.Transcript:Refresh()
+end
+
 C_Timer.NewTicker(1, ns.Safe(function()
-	if M.frame and M.frame:IsShown() and M.page == "threads" then
-		local t = ns.Store:Thread(ns.viewId)
-		if t and t.s == "working" and M.mode == "thread" then M:Refresh() end
+	if not (M.frame and M.frame:IsShown() and M.page == "threads") then return end
+	for _, t in ipairs(ns.Store.data.threads) do
+		if t.s == "working" then
+			M:RefreshTimers()
+			return
+		end
 	end
 end))
