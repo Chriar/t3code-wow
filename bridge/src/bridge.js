@@ -902,7 +902,14 @@ export class Bridge {
   //  * new reply text goes fast only while the player is actually reading (flag "a");
   //  * activity-label churn and keep-alives are slow, slower still as slots run low;
   //  * the last RESERVE slots are kept for acks and alerts only.
+  // After a failed write, nothing goes before the retry time, acks included.
   nextPublishDelay() {
+    const delay = this.pacedDelay();
+    if (delay === null || !this.failures) return delay;
+    return Math.max(delay, this.failures.retryAt - Date.now());
+  }
+
+  pacedDelay() {
     const RESERVE = 20;
     const BATCH = 300; // let a burst of changes land in one update
     const c = this.client;
@@ -1004,8 +1011,20 @@ export class Bridge {
         this.persist.slotGuess = predicted + 1;
       }
     } catch (err) {
-      this.log(`publish failed: ${err.message}`);
+      // On Windows the game, or a virus scanner, can hold a slot or bell file open
+      // for a few seconds, and replacing it fails until then. Back off and keep the
+      // update queued; log the first failure only, then the recovery.
+      const f = this.failures || (this.failures = { count: 0, since: Date.now() });
+      f.count++;
+      f.retryAt = Date.now() + Math.min(4000, 250 * 2 ** (f.count - 1));
+      this.dirty.important = true;
+      if (f.count === 1) this.log(`publish failed: ${err.message}; retrying`);
       return false;
+    }
+    if (this.failures) {
+      const { count, since } = this.failures;
+      this.failures = null;
+      this.log(`publish recovered after ${count} failed ${count === 1 ? 'try' : 'tries'} (${((Date.now() - since) / 1000).toFixed(1)}s)`);
     }
     for (const r of this.results) r.sent = true;
     this.lastGen = gen;
