@@ -155,6 +155,8 @@ test('picks the Forever client among the programs called Wow.exe on Windows', ()
   ];
   assert.deepEqual(pickWinProcess(procs), { pid: 4242, startTicks: started });
   assert.equal(pickWinProcess(procs.slice(0, 2)), null);
+  const arm = { pid: 77, path: procs[2].path.replace('Wow.exe', 'Wow-arm64.exe'), startMs: started };
+  assert.deepEqual(pickWinProcess([procs[0], arm]), { pid: 77, startTicks: started });
 });
 
 test('picks the Forever client out of macOS ps output', () => {

@@ -216,6 +216,9 @@ export function addonsDir(wowDir) {
   return path.join(wowDir, 'Interface', 'AddOns');
 }
 
+// The client's process names on Windows, x86 and ARM.
+const WIN_CLIENT_NAMES = ['Wow', 'Wow-arm64'];
+
 // A Forever client's command line under Wine: Wow.exe, or Wow-ARM64.exe on ARM
 // (Battle.net installs it as Wow-ARM64.exe and launches it as Wow-arm64.exe).
 export function isForeverClient(cmdline) {
@@ -228,7 +231,9 @@ export function isForeverClient(cmdline) {
 //
 // On Windows a helper that can't answer reads as no client.
 export async function findWowProcess() {
-  if (process.platform === 'win32') return desktop.processes('Wow').then(pickWinProcess, () => null);
+  if (process.platform === 'win32') {
+    return Promise.all(WIN_CLIENT_NAMES.map((name) => desktop.processes(name))).then((found) => pickWinProcess(found.flat()), () => null);
+  }
   if (process.platform === 'darwin') return findMacProcess();
   let entries;
   try {
@@ -273,10 +278,10 @@ function findMacProcess() {
   return r.status === 0 ? parseMacProcesses(r.stdout) : null;
 }
 
-// The Forever client among the programs called Wow.exe. startTicks is when the process
+// The Forever client among the programs the helper found. startTicks is when the process
 // started, in ms since 1970 UTC.
 export function pickWinProcess(procs) {
-  const p = procs.find((x) => /[\\/]_forever_[\\/]+Wow\.exe$/i.test(x.path || ''));
+  const p = procs.find((x) => isForeverClient(x.path || ''));
   return p ? { pid: p.pid, startTicks: p.startMs } : null;
 }
 
