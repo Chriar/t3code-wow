@@ -7,9 +7,12 @@ import path from 'node:path';
 // Fake home with Wine prefixes, set before wow.js reads it.
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-home-'));
 process.env.HOME = home;
+process.env.USERPROFILE = home; // what os.homedir() reads on Windows
 delete process.env.WINEPREFIX;
 const { findWowInstalls: findAny, parseMacProcesses, isForeverClient } = await import('../src/wow.js');
 const findWowInstalls = () => findAny({ platform: 'linux' });
+// NTFS has no file named "d:", and Windows wants extra rights to make any link.
+const wineLinks = { skip: process.platform === 'win32' && 'the Wine prefix fixture needs symlinks' };
 
 function touch(p, content = '') {
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -44,7 +47,7 @@ test('recognizes the running Forever client on x86 and ARM, not Retail', () => {
   assert.ok(!isForeverClient('C:\\Program Files (x86)\\World of Warcraft\\_forever_\\Utils\\WowVoiceProxy.exe\0'));
 });
 
-test("finds a custom install folder from Battle.net's records, including another drive", () => {
+test("finds a custom install folder from Battle.net's records, including another drive", wineLinks, () => {
   reset();
   touch(path.join(omarchy(), 'drive_c/ProgramData/Battle.net/Agent/product.db'),
     'junk\x00\x12(C:/Games/World of Warcraft\x00wowf\x00\x12"D:\\Blizzard\\World of Warcraft"');
@@ -75,7 +78,7 @@ test('tells WoW without Forever apart from no WoW at all, and ignores other game
   assert.deepEqual(r.prefixes, [omarchy()], 'only prefixes that really hold Battle.net');
 });
 
-test("finds prefixes Faugus Launcher and Lutris recorded, and counts a prefix's pfx link once", () => {
+test("finds prefixes Faugus Launcher and Lutris recorded, and counts a prefix's pfx link once", wineLinks, () => {
   reset();
   // A prefix Faugus recorded anywhere, here ~/Games itself.
   const games = path.join(home, 'Games');

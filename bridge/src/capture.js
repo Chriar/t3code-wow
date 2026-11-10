@@ -37,7 +37,7 @@ function run(cmd, args, { maxBuffer = 32 * 1024 * 1024, timeout = 4000, input = 
 }
 
 function which(bin) {
-  for (const dir of (process.env.PATH || '').split(':')) {
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
     const p = path.join(dir, bin);
     try {
       fs.accessSync(p, fs.constants.X_OK);
@@ -250,7 +250,7 @@ async function kwinCapture(method, signature, args, options, timeout = 4000) {
 }
 
 export const SCREEN_PERMISSION_HELP =
-  `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge with: launchctl kickstart -k gui/${process.getuid()}/t3code-wow`;
+  `macOS hasn't let the bridge record the screen. Open System Settings > Privacy & Security > Screen & System Audio Recording, turn on ${path.basename(process.execPath)} (${process.execPath}), then restart the bridge with: launchctl kickstart -k gui/${process.getuid?.()}/t3code-wow`;
 
 // ---------------------------------------------------------------------------
 

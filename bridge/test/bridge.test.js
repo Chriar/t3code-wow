@@ -14,6 +14,16 @@ import crypto from 'node:crypto';
 
 let currentKeys = null; // the latest fakeBridge's strip keys: frame() seals with them
 
+function hasLua() {
+  try {
+    execFileSync('lua5.1', ['-v'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+// Lua stays required on Linux and macOS. Windows rarely has it, so there these tests skip without it.
+const needsLua = { skip: process.platform === 'win32' && !hasLua() && 'lua5.1 is not installed' };
 
 function tempAddons(slots = 8) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-addons-'));
@@ -99,7 +109,7 @@ test('parseFrame reads hello and commands', () => {
   assert.deepEqual(f.commands[0], { id: 3, verb: 'send', args: ['tid', 'hi there'] });
 });
 
-test('publish writes the next slots and bootstrap slots, then raises one signal', () => {
+test('publish writes the next slots and bootstrap slots, then raises one signal', needsLua, () => {
   const { b, dir } = fakeBridge();
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 1, 0, 'o', '', '0.1.0']]));
   assert.ok(b.publishNow());
@@ -191,7 +201,7 @@ test('a reload (new ui token) resets the slot pointer; stale beacons do not', ()
   b.stop();
 });
 
-test('an addon waiting on a stale signal gets that signal raised too', () => {
+test('an addon waiting on a stale signal gets that signal raised too', needsLua, () => {
   const { b, dir } = fakeBridge();
   b.persist.sigCounter = 9;
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 2, 4, 0, 'o', '', '0.1.0']]));
@@ -216,7 +226,7 @@ test('signals are never skipped, and never rung ahead of our counter', () => {
   b.stop();
 });
 
-test('a drifted slot prediction still covers the slot the addon will load', () => {
+test('a drifted slot prediction still covers the slot the addon will load', needsLua, () => {
   const { b, dir } = fakeBridge(120);
   b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 40, 5, 0, 'o', '', '0.1.0']]));
   b.client.slotNext = 101; // we kept predicting while the game didn't load anything
@@ -259,7 +269,7 @@ test('activity labels and pending questions', () => {
   assert.equal(p.questions[0].opts[0].v, 'X');
 });
 
-test('lua serializer escapes strings and keeps utf-8', () => {
+test('lua serializer escapes strings and keeps utf-8', needsLua, () => {
   const s = luaValue({ a: 'x"y\\z\n\u0001', b: ['é', 1.5, true], 'not ident': 1, end: 2 });
   const file = path.join(os.tmpdir(), `t3wow-ser-${process.pid}.lua`);
   fs.writeFileSync(file, Buffer.from(`local t = ${s}; io.write(t.a, "|", t.b[1], "|", t["not ident"], "|", t["end"])`, 'latin1'));

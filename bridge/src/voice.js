@@ -19,7 +19,7 @@ const EXTRA_PATHS = [
 ];
 
 export function which(bin) {
-  for (const dir of [...(process.env.PATH || '').split(':'), ...EXTRA_PATHS]) {
+  for (const dir of [...(process.env.PATH || '').split(path.delimiter), ...EXTRA_PATHS]) {
     if (!dir) continue;
     const p = path.join(dir, bin);
     try {

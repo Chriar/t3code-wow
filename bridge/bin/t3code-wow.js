@@ -105,7 +105,7 @@ function quiet(cmd, args, { warn = true } = {}) {
 // `brew upgrade node` deletes the old versioned folder, and the agent would then fail
 // to start at the next login.
 function bridgeCommand() {
-  const linked = (process.env.PATH || '').split(':').map((dir) => path.join(dir, 'node')).find((p) => {
+  const linked = (process.env.PATH || '').split(path.delimiter).map((dir) => path.join(dir, 'node')).find((p) => {
     try {
       return fs.realpathSync(p) === process.execPath;
     } catch {
