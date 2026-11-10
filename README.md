@@ -60,7 +60,7 @@ The same install command works on a Mac with the native WoW: Forever client. Ins
 
 ### Windows
 
-The bridge also runs on Windows 10 and 11, with the native WoW: Forever client. This is the newest setup. The bridge passes its tests on a Windows 11 PC, but the link hasn't been checked in a real game yet, so expect rough edges and please [report them](https://github.com/ryanrhughes/t3code-wow/issues). What was measured, and what wasn't, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#windows-notes).
+The bridge also runs on Windows 10 and 11, with the native WoW: Forever client. This is the newest setup. It has been checked in game on one Windows 11 PC, in Windowed mode at 100 percent scaling, so expect rough edges and please [report them](https://github.com/ryanrhughes/t3code-wow/issues). What was measured, and what wasn't, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#windows-notes).
 
 Install Node.js 22 first (`winget install OpenJS.NodeJS.LTS`, then open a new PowerShell window). Then run this in PowerShell:
 

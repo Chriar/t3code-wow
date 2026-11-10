@@ -215,7 +215,7 @@ The game menu gets a T3 Code button, and a controller chord opens the window.
 
 ## Windows notes
 
-Windows support is new. This section says how the bridge runs in the background there, what was measured, and what hasn't been checked in a real game yet.
+Windows support is new. This section says how the bridge runs in the background there, what was measured, and what hasn't been checked in game yet.
 
 **In the background.** The bridge reads the screen, so it has to run in the player's own desktop session, which a Windows service can't. A Task Scheduler task starts it when the user signs in. A normal user can register that task without administrator rights. The task runs `conhost.exe --headless node t3code-wow.js supervise`, because conhost is the only way found to start Node from a task without a window. The supervisor (`bridge/src/windows-service.js`) starts the bridge, sends its output to `bridge.log`, and starts it again 3 seconds after any exit. Task Scheduler can't do that restart here, because conhost exits with code 0 whatever Node's exit code was. Stopping the task ends conhost and nothing under it. So the supervisor and the bridge both watch conhost's pid and stop when it's gone, and the bridge saves its state as it stops.
 
@@ -237,11 +237,15 @@ Windows support is new. This section says how the bridge runs in the background 
 - With the real bridge under the supervisor and no game running, everything was gone 0.7 seconds after the process the supervisor watches ended, and the bridge had saved its state.
 - `Register-ScheduledTask` took the task from a normal user's shell and kept its settings: no time limit, runs on battery, one instance at a time.
 - T3 Code's `t3.cmd` ran through `cmd.exe`, and created and revoked a session.
+- In game (Windows 11, a 3840x2160 HDR display at 100 percent scaling, Windowed mode): the bridge found the client and the addon connected with the link encrypted. In the first 19 minutes the bridge decoded 431 frames and rejected none. The bells rang: every publish raised one bell and the addon loaded one slot, and it never reported its self-test failing. Across 80 publishes no rename was refused. `read`, `model` and `send` from the game reached T3 Code, including a thread on a second machine.
+- With a small window over the strip corner, a grab went through `PrintWindow` in 33 to 41 ms and decoded. Uncovered, the screen copy took 4 to 11 ms.
+- While the game was minimized the bridge read it as hidden. The addon used 30 slots in those 10 minutes before its first hello was read.
 
-**Not checked in a real game yet.** Each of these needs a session in game, and the results belong here:
+**Not checked in game yet.** Each of these needs a session in game, and the results belong here:
 
-- Whether the strip decodes in Windowed and in Windowed (Fullscreen) mode, with display scaling above 100 percent, and on a second monitor.
+- Whether the strip decodes in Windowed (Fullscreen) mode, with display scaling above 100 percent, and on a second monitor.
+- Windows 10, and Windows on ARM.
 - Whether a message sent while another window covers the game's corner still arrives.
-- How the client opens slot and bell files, and how often a publish has to wait for one.
-- Whether the bells ring, or the addon's self-test fails and it loads slots on a timer.
+- How the client opens slot and bell files, and how often a long session has a publish wait for one.
+- Whether the logon task starts the bridge when the user signs in. In the checks above the installer started it.
 - Whether the game's own voice reads replies aloud.
