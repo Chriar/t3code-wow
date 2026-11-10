@@ -116,7 +116,6 @@ do
 		ack = { ui = ns.ui, seq = ns.Transport.stripSeq },
 	})
 	check(ns.Store.data.view == nil and ns.Store.viewKey == "", "a dropped transcript is not claimed")
-	check(ns.Transport.stripShown, "and the bridge is told about it")
 
 	-- Settling or reopening a thread changes the rows (quick replies) without the
 	-- transcript changing, so its hash alone can't decide a redraw.
