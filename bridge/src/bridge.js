@@ -297,6 +297,7 @@ export class Bridge {
     });
     this.t3.start();
     await this.checkProcess();
+    if (this.stopped) return; // stopped while the first process check ran
     this.procTimer = setInterval(() => this.checkProcess(), 4000);
     this.statusTimer = setInterval(() => this.writeStatus(), 3000);
     // Pick up new Omarchy usage records (the shell's Agents panel refreshes them).
@@ -327,6 +328,7 @@ export class Bridge {
   }
 
   onProcess(proc) {
+    if (this.stopped) return;
     const key = processKey(proc);
     const was = this.proc;
     this.proc = proc;
