@@ -118,7 +118,8 @@ do
 	local at, others
 	for n, o in ipairs(l.filtered) do
 		if o.header and o.label == provider then at = n end
-		if not o.header and o.group ~= provider and o.group ~= "Recent" then others = true end
+		-- Another provider's model may match on its own name ("GPT-5 Codex" under OpenCode, say).
+		if not o.header and o.group ~= provider and o.group ~= "Recent" and not o.label:lower():find(provider:lower(), 1, true) then others = true end
 	end
 	check(at and l.filtered[at + 1] and not l.filtered[at + 1].header and not others, "searching a provider's name lists its models under its header")
 	l:Hide()
