@@ -260,7 +260,7 @@ async function cmdInstall(args) {
   console.log('');
   await firstLaunch({
     restart: freshAddon || had < slots || bellsMissing,
-    running: !!findWowProcess(),
+    running: !!(await findWowProcess()),
     waiting: !args['no-service'] && process.stdin.isTTY && process.stdout.isTTY,
     since: Date.now(),
   });
@@ -393,7 +393,7 @@ function cmdStatus(args) {
 }
 
 async function cmdProbe() {
-  const proc = findWowProcess();
+  const proc = await findWowProcess();
   const cap = new StripCapture({});
   console.log(`backend: ${cap.resolveBackend()}; WoW pid: ${proc?.pid ?? 'not running'}`);
   const res = await cap.grab(proc?.pid);
@@ -499,7 +499,7 @@ async function cmdUninstall(args) {
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
   done('Removed the t3code-wow command and its files');
 
-  if (findWowProcess()) console.log(`\nWorld of Warcraft is running: ${C.b('/reload')} or restart it to finish unloading T3 Code.`);
+  if (await findWowProcess()) console.log(`\nWorld of Warcraft is running: ${C.b('/reload')} or restart it to finish unloading T3 Code.`);
 }
 
 async function cmdEnv(args) {

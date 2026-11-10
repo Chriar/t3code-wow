@@ -9,7 +9,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-home-'));
 process.env.HOME = home;
 process.env.USERPROFILE = home; // what os.homedir() reads on Windows
 delete process.env.WINEPREFIX;
-const { findWowInstalls: findAny, parseMacProcesses, isForeverClient } = await import('../src/wow.js');
+const { findWowInstalls: findAny, parseMacProcesses, isForeverClient, pickWinProcess } = await import('../src/wow.js');
 const findWowInstalls = () => findAny({ platform: 'linux' });
 // NTFS has no file named "d:", and Windows wants extra rights to make any link.
 const wineLinks = { skip: process.platform === 'win32' && 'the Wine prefix fixture needs symlinks' };
@@ -121,6 +121,42 @@ test("finds Forever on macOS from Battle.net's records and /Applications", () =>
   touch(path.join(sys, 'Volumes/Jeux Vidéo/World of Warcraft/_forever_/World of Warcraft.app/Contents/Info.plist'));
   assert.deepEqual(mac().forever, [path.join(sys, 'Volumes/Jeux Vidéo/World of Warcraft/_forever_')]);
   fs.rmSync(sys, { recursive: true, force: true });
+});
+
+test("finds Forever on Windows from Battle.net's records, its default install folder and Program Files", () => {
+  reset();
+  const sys = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-sys-'));
+  const win = () => findAny({ platform: 'win32', system: sys });
+  touch(path.join(sys, 'c/Program Files (x86)/Battle.net/Battle.net.exe'));
+  assert.deepEqual(win().forever, []);
+  assert.deepEqual(win().prefixes, [path.join(sys, 'c/Program Files (x86)/Battle.net')]);
+
+  touch(path.join(sys, 'c/Program Files (x86)/World of Warcraft/_retail_/Wow.exe'));
+  assert.deepEqual(win().wowOnly, [path.join(sys, 'c/Program Files (x86)/World of Warcraft')]);
+
+  // An install on another drive, recorded by Battle.net with forward slashes.
+  touch(path.join(sys, 'c/ProgramData/Battle.net/Agent/product.db'), 'junk\x00\x12"D:/Jeux Vidéo/World of Warcraft\x00wowf');
+  touch(path.join(sys, 'd/Jeux Vidéo/World of Warcraft/_forever_/Wow.exe'));
+  assert.deepEqual(win().forever, [path.join(sys, 'd/Jeux Vidéo/World of Warcraft/_forever_')]);
+
+  // One Battle.net hasn't recorded yet, in the folder it installs games to.
+  const config = path.join(home, 'AppData/Roaming/Battle.net/Battle.net.config');
+  touch(config, JSON.stringify({ Client: { Install: { DefaultInstallPath: 'E:\\Games' } } }));
+  touch(path.join(sys, 'e/Games/World of Warcraft/_forever_/Wow.exe'));
+  assert.deepEqual(win().forever, [path.join(sys, 'd/Jeux Vidéo/World of Warcraft/_forever_'), path.join(sys, 'e/Games/World of Warcraft/_forever_')]);
+  fs.rmSync(sys, { recursive: true, force: true });
+  fs.rmSync(path.join(home, 'AppData'), { recursive: true, force: true });
+});
+
+test('picks the Forever client among the programs called Wow.exe on Windows', () => {
+  const started = Date.UTC(2026, 10, 9, 9, 27, 45);
+  const procs = [
+    { pid: 700, path: 'C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Wow.exe', startMs: started - 60000 },
+    { pid: 800, path: null, startMs: started - 30000 },
+    { pid: 4242, path: 'D:\\Games\\World of Warcraft\\_forever_\\Wow.exe', startMs: started },
+  ];
+  assert.deepEqual(pickWinProcess(procs), { pid: 4242, startTicks: started });
+  assert.equal(pickWinProcess(procs.slice(0, 2)), null);
 });
 
 test('picks the Forever client out of macOS ps output', () => {

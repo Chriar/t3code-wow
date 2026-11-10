@@ -281,7 +281,7 @@ export class Bridge {
     this.t3.on('change', (ev) => this.onT3Change(ev));
     this.t3.on('config', () => this.markDirty('minor'));
     this.t3.start();
-    this.checkProcess();
+    await this.checkProcess();
     this.procTimer = setInterval(() => this.checkProcess(), 4000);
     this.statusTimer = setInterval(() => this.writeStatus(), 3000);
     // Pick up new Omarchy usage records (the shell's Agents panel refreshes them).
@@ -303,8 +303,18 @@ export class Bridge {
     this.saveStateNow();
   }
 
+  // One lookup at a time. On Windows the answer comes from a helper process that can
+  // take seconds to start, and the timer would otherwise queue more lookups behind it.
   checkProcess() {
-    const proc = findWowProcess();
+    this.checking ??= findWowProcess()
+      .then((proc) => this.onProcess(proc))
+      .finally(() => {
+        this.checking = null;
+      });
+    return this.checking;
+  }
+
+  onProcess(proc) {
     const key = processKey(proc);
     const was = this.proc;
     this.proc = proc;

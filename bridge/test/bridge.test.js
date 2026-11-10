@@ -331,6 +331,26 @@ test('emptying the bells for a new client reports that all are empty, also when 
   assert.equal(new SlotBank(bare).resetSignals(), true, 'a broken install does not keep a new client waiting');
 });
 
+test('a new game client is recorded only once the bells of the last one are empty', () => {
+  const { b, dir } = fakeBridge();
+  b.persist.sigCounter = 3;
+  b.bank.raise(2);
+  // Only Windows can keep a bell in use, so the bank stands in for the game playing one, once.
+  b.bank.resetSignals = () => {
+    delete b.bank.resetSignals;
+    return false;
+  };
+  const client = { pid: 2, startTicks: 2 };
+  b.onProcess(client);
+  assert.deepEqual([b.persist.processKey, b.persist.sigCounter], ['1:1', 3], 'the last client is still the one on record');
+  assert.equal(rung(dir, 1), 0, 'nothing is rung for the new one');
+  b.onProcess(client);
+  assert.deepEqual([b.persist.processKey, b.persist.sigCounter], ['2:2', 2]);
+  assert.equal(rung(dir, 2), 0, 'the old bell is empty');
+  assert.ok(rung(dir, 1) > 0, 'the new client gets its first update on bell 1');
+  b.stop();
+});
+
 test('an ack that meets a file in use goes out again by itself, not at once, and rings one bell', async () => {
   const { b, dir } = fakeBridge();
   const held = slotInUseOnce(b);
