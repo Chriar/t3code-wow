@@ -339,7 +339,7 @@ export class T3Client extends EventEmitter {
       // Follow-up snapshot frames can carry only projects (threads: []): keep threads.
       if (Array.isArray(snap.threads) && snap.threads.length > 0) {
         this.threads.clear();
-        for (const t of snap.threads) if (!t.lineage?.parentThreadId) this.threads.set(t.id, t);
+        for (const t of snap.threads) this.threads.set(t.id, t);
       }
       if (Array.isArray(snap.projects)) for (const p of snap.projects) this.projects.set(p.id, p);
       if (typeof snap.olderSettled === 'number') this.olderSettled = snap.olderSettled;
@@ -349,7 +349,7 @@ export class T3Client extends EventEmitter {
       this.emit('change', { kind: 'snapshot' });
     } else if (item.kind === 'thread.updated') {
       const t = item.thread;
-      if (!t || t.lineage?.parentThreadId) return;
+      if (!t) return;
       const prev = this.threads.get(t.id);
       this.threads.set(t.id, t);
       if (!prev || prev.updatedAt !== t.updatedAt || threadStatus(prev) !== threadStatus(t)) {

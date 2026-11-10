@@ -467,4 +467,23 @@ test('ending a turn into waiting is not announced; the wait ending is', async ()
   assert.deepEqual(said, []);
   b.onT3Change({ kind: 'thread', prev: waiting, thread: done });
   assert.deepEqual(said, ['open']);
+  b.onT3Change({ kind: 'thread', prev: running, thread: { ...running, id: 'kid', lineage: { parentThreadId: 'w' }, status: 'completed', activityRunStatus: null } });
+  assert.deepEqual(said, ['open'], 'subagent threads are never announced');
+});
+
+test('running subagent threads are listed, idle ones are not', async () => {
+  const { T3Client } = await import('../src/t3.js');
+  const c = new T3Client({ tokenProvider: async () => 'x' });
+  c.onShell({ kind: 'snapshot', snapshot: { threads: [{ id: 'kid', lineage: { parentThreadId: 'p' }, status: 'running', activityRunStatus: 'running' }] } });
+  assert.ok(c.threads.has('kid'), 'the client keeps subagent threads');
+  c.onShell({ kind: 'thread.updated', thread: { id: 'kid2', lineage: { parentThreadId: 'p' }, status: 'running', activityRunStatus: 'running' } });
+  assert.ok(c.threads.has('kid2'), 'and their updates');
+
+  const { b } = fakeBridge();
+  const now = new Date().toISOString();
+  b.t3.threads.set('busy-kid', { id: 'busy-kid', title: 'Busy', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1' }, updatedAt: now });
+  b.t3.threads.set('idle-kid', { id: 'idle-kid', title: 'Idle', projectId: 'p1', status: 'completed', lineage: { parentThreadId: 't1' }, updatedAt: now });
+  const ids = b.buildSnapshot().threads.map((t) => t.id);
+  assert.ok(ids.includes('busy-kid'), 'a running subagent thread is listed');
+  assert.ok(!ids.includes('idle-kid'), 'an idle one is not');
 });

@@ -670,6 +670,7 @@ export class Bridge {
       else if (ACTIVE.has(status)) this.refreshView(t.id);
       if (before !== status) {
         this.markDirty('important');
+        if (t.lineage?.parentThreadId) return; // no announcements for subagent threads
         if (BUSY.has(before) && !BUSY.has(status)) this.announce(t, status);
         else if (status === 'input' && before !== 'input') this.announce(t, status);
       } else {
@@ -722,7 +723,8 @@ export class Bridge {
     const usedProjects = new Set();
     let threads = [...t3.threads.values()]
       .map((t) => ({ t, s: threadStatus(t) }))
-      .filter(({ s }) => s !== 'archived');
+      // Subagent threads only while they're busy, like T3's own sidebar.
+      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s)));
     threads.sort((a, b) => ORDER[a.s] - ORDER[b.s] || Date.parse(b.t.updatedAt) - Date.parse(a.t.updatedAt));
     let settled = 0;
     threads = threads.filter(({ s }) => s !== 'settled' || ++settled <= 30).slice(0, 90);
