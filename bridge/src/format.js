@@ -7,9 +7,24 @@ const DIM = 'ff9d9d9d';
 
 const color = (hex, s) => `|c${hex}${s}|r`;
 
+// Characters agents use often that the game's fonts don't have (they show as
+// empty boxes), with plain stand-ins. Arrows, check marks and crosses were seen as
+// boxes in game; punctuation such as — … • · “ ” and math such as ≥ draw fine.
+const GLYPHS = {
+  '→': '->', '⟶': '->', '➜': '->', '➔': '->', '➡': '->',
+  '←': '<-', '⟵': '<-', '⬅': '<-',
+  '↔': '<->', '⟷': '<->',
+  '⇒': '=>', '⟹': '=>', '⇐': '<=', '⇔': '<=>',
+  '↑': '^', '⬆': '^', '↓': 'v', '⬇': 'v',
+  '✓': 'OK', '✔': 'OK', '✅': 'OK', '✗': 'X', '✘': 'X', '❌': 'X',
+  '⚠': '!', '️': '',
+};
+const GLYPH_RE = new RegExp(`[${Object.keys(GLYPHS).join('')}]`, 'gu');
+
 // WoW treats "|" as an escape character; double it so text can't inject markup.
+// Also swaps in stand-ins for characters the game can't draw.
 export function escapeWow(s) {
-  return String(s ?? '').replace(/\|/g, '||');
+  return String(s ?? '').replace(/\|/g, '||').replace(GLYPH_RE, (c) => GLYPHS[c]);
 }
 
 function inline(line) {
