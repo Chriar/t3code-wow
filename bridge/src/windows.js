@@ -152,9 +152,9 @@ export class Desktop {
   #queue = [];
   #rest = Buffer.alloc(0);
   #stderr = '';
-  #timer = null;
+  #deadline = null;
   #nextId = 1;
-  #failures = 0;
+  #failuresInARow = 0;
   #retryAt = 0;
   #lastError = '';
   /** @type {{ pid: number|undefined, hwnd: number, at: number }|null} */
@@ -234,7 +234,7 @@ export class Desktop {
   /** Ask the helper to exit now. Only tests need this; see the class comment. */
   stop() {
     this.#child?.stdin.end();
-    for (const waiting of this.#toIdle('stop')) waiting.reject(new Error('the Windows helper was stopped'));
+    for (const waiting of this.#drain('stop')) waiting.reject(new Error('the Windows helper was stopped'));
   }
 
   /**
@@ -260,13 +260,13 @@ export class Desktop {
       if (this.#state === 'idle' && Date.now() < this.#retryAt) return reject(new Error(this.#lastError));
       const id = this.#nextId++;
       this.#queue.push({ id, timeoutMs: this.#timeoutMs ?? TIME_LIMIT_MS[op], resolve, reject });
-      if (this.#state === 'idle') this.#start();
-      if (this.#state === 'idle') return;
+      if (this.#state === 'idle' && !this.#start()) return;
       this.#child.stdin.write(`${JSON.stringify({ id, op, ...args })}\n`);
       if (this.#state === 'ready' && this.#queue.length === 1) this.#limitHead();
     });
   }
 
+  /** @returns {boolean} False when no helper could be launched. The queue has been failed by then. */
   #start() {
     this.#transition('launch');
     this.#rest = Buffer.alloc(0);
@@ -275,7 +275,8 @@ export class Desktop {
     try {
       child = this.#launch();
     } catch (err) {
-      return this.#fail(`the bridge's Windows helper couldn't start: ${err.message}`);
+      this.#fail(`the bridge's Windows helper couldn't start: ${err.message}`);
+      return false;
     }
     this.#child = child;
     for (const handle of [child, child.stdin, child.stdout, child.stderr]) handle.unref();
@@ -288,6 +289,7 @@ export class Desktop {
     child.on('error', (err) => this.#ended(child, err.message));
     child.on('close', (code) => this.#ended(child, `it exited with code ${code}`));
     this.#limit(READY_TIMEOUT_MS, `the bridge's Windows helper didn't start within ${READY_TIMEOUT_MS / 1000} s`);
+    return true;
   }
 
   #read(child, chunk) {
@@ -309,7 +311,7 @@ export class Desktop {
         return this.#fail("the bridge's Windows helper sent a reply the bridge wasn't waiting for");
       }
       this.#queue.shift();
-      this.#failures = 0;
+      this.#failuresInARow = 0;
       this.#limitHead();
       if (frame.head.ok) asked.resolve(frame);
       else asked.reject(new Error(frame.head.error));
@@ -323,30 +325,30 @@ export class Desktop {
   }
 
   #limit(ms, reason) {
-    clearTimeout(this.#timer);
-    this.#timer = setTimeout(() => this.#fail(reason), ms);
+    clearTimeout(this.#deadline);
+    this.#deadline = setTimeout(() => this.#fail(reason), ms);
   }
 
   #limitHead() {
     const head = this.#queue[0];
     if (head) this.#limit(head.timeoutMs, `the bridge's Windows helper didn't answer within ${head.timeoutMs / 1000} s`);
-    else clearTimeout(this.#timer);
+    else clearTimeout(this.#deadline);
   }
 
   #fail(reason) {
     this.#child?.kill();
-    const waiting = this.#toIdle('fail');
-    this.#retryAt = Date.now() + RESTART_AFTER_MS[Math.min(this.#failures, RESTART_AFTER_MS.length - 1)];
-    this.#failures++;
+    const waiting = this.#drain('fail');
+    this.#retryAt = Date.now() + RESTART_AFTER_MS[Math.min(this.#failuresInARow, RESTART_AFTER_MS.length - 1)];
+    this.#failuresInARow++;
     this.#lastError = reason;
     for (const request of waiting) request.reject(new Error(reason));
     this.report(reason);
   }
 
   /** @param {'fail'|'stop'} event */
-  #toIdle(event) {
+  #drain(event) {
     this.#transition(event);
-    clearTimeout(this.#timer);
+    clearTimeout(this.#deadline);
     const waiting = this.#queue;
     this.#queue = [];
     this.#child = null;
