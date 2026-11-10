@@ -119,6 +119,13 @@ const NO_SHOT = {
 // nobody sees, then where in the command it happened.
 export const whatPowerShellSaid = (stderr) => stderr.split(/\r?\nAt line:/)[0].replace(/\r?\n/g, '').trim().slice(0, 300);
 
+/** For each state of the helper, what can happen to it there and the state that follows. */
+const LIFECYCLE = {
+  idle: { launch: 'starting', stop: 'idle' },
+  starting: { hello: 'ready', fail: 'idle', stop: 'idle' },
+  ready: { fail: 'idle', stop: 'idle' },
+};
+
 /**
  * The Windows desktop, through one long-lived helper process.
  *
@@ -138,7 +145,7 @@ export const whatPowerShellSaid = (stderr) => stderr.split(/\r?\nAt line:/)[0].r
 export class Desktop {
   /** @type {import('node:child_process').ChildProcess|null} */
   #child = null;
-  /** @type {'idle'|'starting'|'ready'} */
+  /** @type {keyof typeof LIFECYCLE} */
   #state = 'idle';
   /** @type {Array<{ id: number, timeoutMs: number, resolve: (f: Frame) => void, reject: (e: Error) => void }>} */
   #queue = [];
@@ -226,7 +233,7 @@ export class Desktop {
   /** Ask the helper to exit now. Only tests need this; see the class comment. */
   stop() {
     this.#child?.stdin.end();
-    for (const waiting of this.#toIdle()) waiting.reject(new Error('the Windows helper was stopped'));
+    for (const waiting of this.#toIdle('stop')) waiting.reject(new Error('the Windows helper was stopped'));
   }
 
   /**
@@ -260,7 +267,7 @@ export class Desktop {
   }
 
   #start() {
-    this.#state = 'starting';
+    this.#transition('launch');
     this.#rest = Buffer.alloc(0);
     this.#stderr = '';
     let child;
@@ -292,7 +299,7 @@ export class Desktop {
     }
     for (const frame of frames) {
       if (this.#state === 'starting' && frame.head.ready) {
-        this.#state = 'ready';
+        this.#transition('hello');
         this.#limitHead();
         continue;
       }
@@ -327,7 +334,7 @@ export class Desktop {
 
   #fail(reason) {
     this.#child?.kill();
-    const waiting = this.#toIdle();
+    const waiting = this.#toIdle('fail');
     this.#retryAt = Date.now() + RESTART_AFTER_MS[Math.min(this.#failures, RESTART_AFTER_MS.length - 1)];
     this.#failures++;
     this.#lastError = reason;
@@ -335,13 +342,24 @@ export class Desktop {
     this.report(reason);
   }
 
-  #toIdle() {
+  /** @param {'fail'|'stop'} event */
+  #toIdle(event) {
+    this.#transition(event);
     clearTimeout(this.#timer);
     const waiting = this.#queue;
     this.#queue = [];
     this.#child = null;
-    this.#state = 'idle';
     return waiting;
+  }
+
+  /**
+   * @param {'launch'|'hello'|'fail'|'stop'} event
+   * @throws {Error} when LIFECYCLE has no such event for the state the helper is in.
+   */
+  #transition(event) {
+    const next = LIFECYCLE[this.#state][event];
+    if (!next) throw new Error(`the bridge's Windows helper can't ${event} while it is ${this.#state}`);
+    this.#state = next;
   }
 }
 
