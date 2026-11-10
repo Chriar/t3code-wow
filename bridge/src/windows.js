@@ -55,6 +55,7 @@ const BOOT = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_
 const READY_TIMEOUT_MS = 15000; // compiling takes 0.3 to 1.3 s here; a cold disk or a virus scan can take longer
 const WINDOW_CACHE_MS = 2000;
 const RESTART_AFTER_MS = [1000, 2000, 5000, 15000, 30000];
+const TIME_LIMIT_MS = { procs: 3000, windows: 4000, grab: 4000, shot: 8000 };
 
 /**
  * @param {number} [parentPid]  The helper exits when this process is gone.
@@ -175,7 +176,7 @@ export class Desktop {
    * @returns {Promise<WinProcess[]>}
    */
   async processes(name) {
-    return (await this.#request('procs', { name }, 3000)).head.procs;
+    return (await this.#request('procs', { name })).head.procs;
   }
 
   /**
@@ -199,7 +200,7 @@ export class Desktop {
   async grab(pid, { width, height, region = null }) {
     const from = region ? { x: region.x, y: region.y } : { hwnd: await this.#gameWindow(pid) };
     if (from.hwnd === null) return { status: 'no-window' };
-    const { head, data } = await this.#request('grab', { ...from, w: width, h: height }, 4000);
+    const { head, data } = await this.#request('grab', { ...from, w: width, h: height });
     if (head.state === 'ok') return { status: 'ok', image: { width: head.width, height: head.height, data }, via: head.via };
     if (head.state === 'gone') this.#window = null;
     return { status: head.state === 'gone' ? 'no-window' : 'hidden' };
@@ -217,7 +218,7 @@ export class Desktop {
   async screenshot(pid) {
     const hwnd = await this.#gameWindow(pid);
     if (hwnd === null) throw new Error(NO_SHOT.gone);
-    const { head, data } = await this.#request('shot', { hwnd, quality: 85 }, 8000);
+    const { head, data } = await this.#request('shot', { hwnd, quality: 85 });
     if (head.state !== 'ok') throw new Error(NO_SHOT[head.state]);
     return { data, mime: 'image/jpeg' };
   }
@@ -235,23 +236,22 @@ export class Desktop {
   async #gameWindow(pid) {
     const known = this.#window;
     if (known && known.pid === pid && Date.now() - known.at < WINDOW_CACHE_MS) return known.hwnd;
-    const { head } = await this.#request('windows', { pid: pid || 0, title: 'World of Warcraft' }, 4000);
+    const { head } = await this.#request('windows', { pid: pid || 0, title: 'World of Warcraft' });
     const win = pickWinWindow(head.windows, pid);
     this.#window = win.found ? { pid, hwnd: win.hwnd, at: Date.now() } : null;
     return win.found ? win.hwnd : null;
   }
 
   /**
-   * @param {string} op
+   * @param {keyof typeof TIME_LIMIT_MS} op
    * @param {Record<string, string|number>} args
-   * @param {number} timeoutMs
    * @returns {Promise<Frame>}
    */
-  #request(op, args, timeoutMs) {
+  #request(op, args) {
     return new Promise((resolve, reject) => {
       if (this.#state === 'idle' && Date.now() < this.#retryAt) return reject(new Error(this.#lastError));
       const id = this.#nextId++;
-      this.#queue.push({ id, timeoutMs: this.#timeoutMs ?? timeoutMs, resolve, reject });
+      this.#queue.push({ id, timeoutMs: this.#timeoutMs ?? TIME_LIMIT_MS[op], resolve, reject });
       if (this.#state === 'idle') this.#start();
       if (this.#state === 'idle') return;
       this.#child.stdin.write(`${JSON.stringify({ id, op, ...args })}\n`);
