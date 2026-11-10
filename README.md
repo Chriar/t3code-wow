@@ -7,7 +7,7 @@ Watch and run your [T3 Code](https://t3.codes) agent threads without leaving the
 
 ## What it does
 
-- **T3 Code window** (`/t3`): your threads grouped into Working, Open and Settled, filtered by project or machine. Read a thread, reply, queue follow-ups, stop a run, settle or reopen it, start new threads, answer the agent's questions and approve its requests.
+- **T3 Code window** (`/t3`): your threads grouped into Working, Open and Settled, filtered by project or machine. Read a thread, reply, steer a working thread or queue follow-ups, stop a run, settle or reopen it, start new threads, answer the agent's questions and approve its requests.
 - **Quest tracker**: what's running, what needs you and what just finished, right under your quests, with live timers.
 - **Notices**: a toast, a sound and a chat line when a thread finishes or needs you. They wait until combat ends, and stay quiet in dungeons and raids if you like.
 - **Full controller support**: the D-pad moves between controls, A selects, B goes back, LB/RB switch tabs, X reads aloud and holding Y dictates. Hold both triggers and press Back to open it from anywhere.
