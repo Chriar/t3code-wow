@@ -439,7 +439,7 @@ function T:Refresh(force)
 	end
 	local key = table.concat({
 		tostring(ns.viewId), ns.Store.viewKey or "", ns.Main.mode, context,
-		echo and echo.at or 0, math.floor(self:BodyWidth()),
+		echo and time() - echo.at < 120 and echo.at or 0, math.floor(self:BodyWidth()),
 	}, ":")
 	if key == self.key and not force then
 		self.scrollBox:ForEachFrame(function(frame, ed)
