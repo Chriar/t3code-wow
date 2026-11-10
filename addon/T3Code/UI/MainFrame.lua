@@ -433,34 +433,35 @@ function M:Send(textOverride)
 	local text = textOverride or self.composer:GetInputText() or ""
 	text = strtrim(text)
 	if text == "" then return end
-	if #text > 2300 then
-		ns.Print("That message is too long to send from the game (max ~2,000 characters).")
-		return
-	end
 	if self.mode == "new" then
 		if not self.newProject then
 			ns.Print("Pick a project for the new thread first.")
 			return
 		end
-		ns.db.settings.lastProject = self.newProject
 		local instanceId, slug = ns.Store.SplitModelKey(self:ChosenNewModel())
 		local effort = self:ChosenNewEffort()
+		local id
 		if effort then
 			-- An empty model means T3 Code's default, at this level.
-			self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId or "", slug or "", effort)
+			id = ns.Transport:Send("new", self.newProject, text, instanceId or "", slug or "", effort)
 		else
-			self.pendingNew = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
+			id = ns.Transport:Send("new", self.newProject, text, instanceId, slug)
 		end
+		if not id then return end -- too long; the composer keeps it
+		ns.db.settings.lastProject = self.newProject
+		self.pendingNew = id
 		self.pendingNewText = text
 		ns.db.drafts.__new = nil
 	elseif ns.viewId and not textOverride and ns.Transcript:CustomAnswer(text) then
 		ns.db.drafts[ns.viewId] = nil
 	elseif ns.viewId then
+		local id
 		if ns.db.settings.steerFollowUps then
-			ns.Transport:Send("send", ns.viewId, text, "steer")
+			id = ns.Transport:Send("send", ns.viewId, text, "steer")
 		else
-			ns.Transport:Send("send", ns.viewId, text)
+			id = ns.Transport:Send("send", ns.viewId, text)
 		end
+		if not id then return end -- too long; the composer keeps it
 		ns.Transcript:AddLocalEcho(ns.viewId, text)
 		ns.db.drafts[ns.viewId] = nil
 	else

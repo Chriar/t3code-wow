@@ -138,6 +138,18 @@ do
 end
 
 -- Send a message: queued, echoed, and present in the strip payload.
+-- A message too long for one frame would never go and would hold up the queue behind it.
+do
+	local queued = #ns.Transport.queue
+	ns.Main.composer._text = string.rep("x", 2300)
+	ns.Main:Send()
+	check(#ns.Transport.queue == queued and #ns.Main.composer._text == 2300, "a message too long for the strip is refused, and the composer keeps it")
+	ns.Main.composer._text = string.rep("x", 1900)
+	ns.Main:Send()
+	check(#ns.Transport.queue == queued + 1, "a long message that fits still goes")
+	table.remove(ns.Transport.queue)
+	ns.Transcript.echo[ns.viewId] = nil
+end
 ns.Main.composer._text = "Please run the tests"
 ns.Main:Send()
 check(#ns.Transport.queue >= 1, "command queued")
