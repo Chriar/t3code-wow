@@ -86,6 +86,19 @@ ns.Main:Send("And the linter")
 check(ns.Transport.queue[#ns.Transport.queue].args[3] == nil, "with steering off, a follow-up names no mode, so the bridge queues it")
 ns.db.settings.steerFollowUps = true
 check(ns.Transcript.echo[ns.viewId] ~= nil, "local echo shown")
+-- The bridge reformats what you sent (markdown, escapes); the echo still goes when it arrives.
+do
+	local v = ns.Store.data.view
+	if v and v.id == ns.viewId then
+		local last = 0
+		for _, m in ipairs(v.msgs or {}) do last = math.max(last, m.at or 0) end
+		-- T3 Code renumbers its bounded window, so the new message can have a lower number.
+		table.insert(v.msgs, { r = "u", t = "|cffa8c7fa  reformatted|r", at = last + 1, n = 1 })
+		ns.Transcript:Refresh(true)
+		check(ns.Transcript.echo[ns.viewId] == nil, "local echo dropped once the sent message arrives, reformatted")
+		table.remove(v.msgs)
+	end
+end
 
 -- Pages
 ns.Main:ShowPage("usage")

@@ -7,7 +7,7 @@ local UI = ns.UI
 local T = {}
 ns.Transcript = T
 
-T.echo = {}      -- threadId -> { text, at } sent but not yet in a snapshot
+T.echo = {}      -- threadId -> { text, at, after } sent but not yet in a snapshot
 T.answers = {}   -- requestId -> { [questionId] = { value = true, ... } }
 
 local QUICK_REPLIES = {
@@ -189,8 +189,20 @@ function T:Relayout()
 	if ns.Main.frame and ns.Main.frame:IsShown() then self:Refresh() end
 end
 
+-- The bridge reformats messages (markdown, escapes), so the echo is matched by
+-- time, not text: it goes once a message of yours arrives that is newer than the
+-- newest message shown when you sent it. Both times come from T3 Code's clock.
+-- (Message numbers won't do: T3 Code sends a bounded window and renumbers it.)
 function T:AddLocalEcho(threadId, text)
-	self.echo[threadId] = { text = text, at = time() }
+	local after
+	local v = ns.Store.data.view
+	if v and v.id == threadId and not v.loading then
+		after = 0
+		for _, m in ipairs(v.msgs or {}) do
+			if type(m.at) == "number" and m.at > after then after = m.at end
+		end
+	end
+	self.echo[threadId] = { text = text, at = time(), after = after }
 	self.followBottom = true
 	self:Refresh(true)
 end
@@ -199,6 +211,13 @@ end
 -- Building the element list
 
 T.heightFix = {} -- corrected row heights, by text and width
+
+-- Without the thread's messages at send time, compare with this PC's clock, with
+-- slack for a T3 Code server whose clock differs.
+local function EchoArrived(echo, m)
+	if echo.after then return type(m.at) == "number" and m.at > echo.after end
+	return type(m.at) == "number" and m.at >= echo.at - 30
+end
 
 local function MessageElement(msg, echo)
 	local width = T:BodyWidth()
@@ -311,7 +330,7 @@ function T:Elements()
 	local echo = self.echo[id]
 	for _, m in ipairs(v.msgs or {}) do
 		table.insert(list, MessageElement(m))
-		if echo and m.r == "u" and ns.StripMarkup(m.t):find(echo.text:sub(1, 40), 1, true) then
+		if echo and m.r == "u" and EchoArrived(echo, m) then
 			self.echo[id] = nil
 			echo = nil
 		end
