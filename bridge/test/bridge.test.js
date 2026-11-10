@@ -288,6 +288,25 @@ test('read-aloud waits while the player is in combat', () => {
   b.stop();
 });
 
+test('missing dictation explains itself in platform terms', () => {
+  const { b } = fakeBridge();
+  b.voice.canOmarchyDictate = () => false;
+  b.voice.canTranscribe = () => false;
+  assert.match(b.voice.dictationHint('darwin'), /macOS/, 'macOS gets macOS words');
+  assert.doesNotMatch(b.voice.dictationHint('darwin'), /Omarchy/, "macOS isn't told to use Omarchy");
+  assert.match(b.voice.dictationHint('linux'), /Omarchy/, 'Linux keeps the Omarchy hint');
+  assert.throws(() => b.dictate('start'), (err) => err.message === b.voice.dictationHint());
+  const noBackend = b.buildSnapshot().bridge;
+  assert.equal(noBackend.dictation, undefined);
+  assert.equal(noBackend.dictationHint, b.voice.dictationHint(), 'the addon is told what to show');
+  b.voice.canOmarchyDictate = () => true;
+  b.voice.backendName = () => 'voxtype';
+  const withBackend = b.buildSnapshot().bridge;
+  assert.equal(withBackend.dictation, 'omarchy-dictation (voxtype)');
+  assert.equal(withBackend.dictationHint, undefined, 'no hint when dictation works');
+  b.stop();
+});
+
 test('pacing: fast while reading, patient otherwise, reserve kept for alerts', () => {
   const { b } = fakeBridge(600);
   const hello = (flags, seq = 1) => frame(seq, [['H', 1, 'sess', 'ui1', 2, 1, 0, flags, 't1', '0.1.0', '600']]);

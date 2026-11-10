@@ -244,9 +244,10 @@ function M:CreateButtonBar(f)
 	bar.Mic = UI.IconButton(f, "voicechat-icon-mic", 26, "Dictate", function() M:ToggleDictation() end)
 	bar.Mic:SetPoint("LEFT", bar.Stop, "RIGHT", 6, 0)
 	UI.Tooltip(bar.Mic, nil, function()
-		local d = ns.Store.data.bridge and ns.Store.data.bridge.dictation
-		return d and ("Click, speak, click again: your words are typed into the message box (" .. d .. " on your desktop). On a controller, hold Y.")
-			or "No dictation backend found on the desktop. On Omarchy, install one from the menu (Install > AI > Dictation). Dictation isn't available on macOS yet."
+		local b = ns.Store.data.bridge or {}
+		if b.dictationHint then return b.dictationHint end
+		if not b.dictation then return "No dictation backend found on the desktop." end
+		return "Click, speak, click again: your words are typed into the message box (" .. b.dictation .. " on your desktop). On a controller, hold Y."
 	end)
 
 	bar.Speak = UI.IconButton(f, "voicechat-icon-speaker", 26, "Read aloud", function()
@@ -524,10 +525,20 @@ function M:ToggleDictation()
 		self.dictating = false
 		ns.Transport:Send("dictate", "stop")
 	else
+		local b = ns.Store.data.bridge
+		if b and b.dictationHint then
+			-- Push-to-talk repeats while the key is held; say this once, not every time.
+			local now = GetTime()
+			if not self.dictNoteAt or now - self.dictNoteAt > 5 then
+				self.dictNoteAt = now
+				ns.Print(b.dictationHint)
+			end
+			return
+		end
 		self.dictating = true
 		self:Open()
 		self.composer:SetFocus()
-		ns.Transport:Send("dictate", "start")
+		self.dictCmd = ns.Transport:Send("dictate", "start")
 	end
 	self:Refresh()
 end
@@ -635,6 +646,10 @@ function M:Refresh()
 	end
 	f.Bar.Stop:SetEnabled(t ~= nil and t.s == "working" and self.mode ~= "new")
 	f.Bar.Stop.Icon:SetDesaturated(not f.Bar.Stop:IsEnabled())
+	local bridge = ns.Store.data.bridge
+	local canDictate = self.dictating or not (bridge and bridge.dictationHint)
+	f.Bar.Mic:SetEnabled(canDictate)
+	f.Bar.Mic.Icon:SetDesaturated(not canDictate)
 	f.Bar.Mic.Icon:SetVertexColor(self.dictating and 1 or 1, self.dictating and 0.3 or 1, self.dictating and 0.3 or 1)
 	f.Bar.Back:SetEnabled(self.mode == "new" or ns.viewId ~= nil or not f.Pages.threads.Left:IsShown())
 	self:UpdateCounter()
@@ -669,6 +684,9 @@ function M:HandleDictation(d)
 	if d.n <= (ns.db.lastDictN or 0) then return end
 	ns.db.lastDictN = d.n
 	if time() - math.floor(d.n / 1000) > 90 then return end -- left over from before a /reload
+	-- A failed start (no backend, the bridge dropped it) must not leave the mic stuck
+	-- "on", or the next press sends stop instead of start.
+	if d.state ~= "listening" and d.state ~= "transcribing" then self.dictating = false end
 	self.dictState = d.state
 	if d.state == "done" and d.text and d.text ~= "" then
 		self:Create()
@@ -714,6 +732,13 @@ ns:On("LinkChanged", function()
 	end
 end)
 ns:On("CommandResult", function(r)
+	if r.ok == false and r.id == M.dictCmd then
+		-- The start was refused before the bridge sent a dictation state; put the
+		-- mic back so the next press starts instead of sending stop.
+		M.dictCmd = nil
+		M.dictating = false
+		if M.frame and M.frame:IsShown() then M:Refresh() end
+	end
 	if r.ok == false and r.msg then
 		ns.Print(ns.Color("red", r.msg))
 		if UIErrorsFrame then UIErrorsFrame:AddMessage("T3 Code: " .. r.msg, 1, 0.2, 0.2) end

@@ -128,6 +128,38 @@ ns.Transport:Apply(data)
 check(ns.Main.composer._text == "already pasted words", "text the backend already pasted isn't added again")
 ns.Main.composer._text = ""
 
+-- A desktop with no dictation backend (macOS today): the mic says why and sends nothing.
+data.bridge.dictation = nil
+data.bridge.dictationHint = "Dictation isn't available on macOS yet."
+data.gen = data.gen + 1
+ns.Transport:Apply(data)
+Stub.printed = {}
+local queued = #ns.Transport.queue
+ns.Main.dictating = false
+ns.Main.dictNoteAt = nil
+ns.Main:ToggleDictation()
+check(not ns.Main.dictating and #ns.Transport.queue == queued, "no dictation backend: nothing is sent")
+check(Stub.printed[1] and Stub.printed[1]:find("macOS", 1, true) ~= nil, "the mic explains why: " .. tostring(Stub.printed[1]))
+ns.Main:ToggleDictation()
+check(#Stub.printed == 1, "a repeated press doesn't repeat the note")
+ns.Main:Open()
+ns.Main:Refresh()
+check(not ns.Main.frame.Bar.Mic:IsEnabled(), "the mic is dimmed while there is no backend")
+data.bridge.dictation = "test backend"
+data.bridge.dictationHint = nil
+data.gen = data.gen + 1
+ns.Transport:Apply(data)
+ns.Main:Refresh()
+check(ns.Main.frame.Bar.Mic:IsEnabled(), "the mic is ready again once a backend is reported")
+
+-- A refused dictate command doesn't leave the mic stuck on.
+ns.Main.dictating = false
+ns.Main:ToggleDictation()
+check(ns.Main.dictating, "dictation starts when a backend is reported")
+data.gen = data.gen + 1
+ns.Transport:Apply({ gen = data.gen, results = { { id = ns.Main.dictCmd, ok = false, msg = "no microphone" } }, threads = data.threads, projects = data.projects, bridge = data.bridge, usage = data.usage, ack = { ui = ns.ui, seq = ns.Transport.stripSeq } })
+check(not ns.Main.dictating, "a refused dictate command puts the mic back")
+
 -- Plan, approval details, run summary, queued note
 data.gen = data.gen + 1
 for _, th in ipairs(data.threads) do if th.id == ns.viewId then th.s = "plan" end end

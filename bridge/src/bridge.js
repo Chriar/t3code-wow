@@ -532,7 +532,7 @@ export class Bridge {
     const v = this.voice;
     const viaOmarchy = v.canOmarchyDictate();
     if (!viaOmarchy && !v.canTranscribe()) {
-      throw new Error('no dictation backend; pick one in Omarchy > Setup > Defaults > Dictation');
+      throw new Error(v.dictationHint());
     }
     if (action === 'start') {
       if (viaOmarchy) v.startOmarchy();
@@ -781,6 +781,8 @@ export class Bridge {
       }
     }
 
+    const voice = this.voice.describe();
+
     const usage = [];
     this.omarchyUsage.refresh(this.usageInstances());
     const enabled = (t3.config?.providers || []).filter((p) => p.enabled && (p.usageLimits || this.omarchyUsage.forInstance(p.instanceId)));
@@ -795,8 +797,9 @@ export class Bridge {
         t3err: t3.error ? escapeWow(t3.error) : undefined,
         server: t3.config?.environment?.serverVersion,
         host: t3.config?.environment?.label,
-        tts: this.voice.describe().tts || undefined,
-        dictation: this.voice.describe().dictation || undefined,
+        tts: voice.tts || undefined,
+        dictation: voice.dictation || undefined,
+        dictationHint: voice.hint || undefined,
         slots: this.bank.slots,
         envs: t3.envs.length > 1 ? t3.environments().map((e) => ({ label: escapeWow(e.label), state: e.state, local: e.local, n: e.threads })) : undefined,
       },

@@ -33,6 +33,9 @@ end
 function UI.IconButton(parent, icon, size, tooltip, onClick)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(size or 28, size or 28)
+	-- A disabled icon still needs its tooltip to explain why; the client skips
+	-- motion scripts on disabled buttons unless asked to keep them.
+	b:SetMotionScriptsWhileDisabled(true)
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetAtlas("common-button-square-gray-up")
 	if not bg:GetAtlas() then

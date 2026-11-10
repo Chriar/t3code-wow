@@ -385,6 +385,7 @@ function cmdStatus(args) {
   }
   console.log(`  Live updates left this session: ${st.slots.remaining}/${st.slots.total} ${C.d(`· ${st.publishes} updates sent · update bell #${st.signals.next}`)}`);
   console.log(`  Speech: ${st.voice.tts || C.y('none')} · Dictation: ${st.voice.dictation || C.y('none')}`);
+  if (st.voice.hint) console.log(`    ${C.d(st.voice.hint)}`);
   if (args.log || args.v) {
     console.log('');
     for (const l of st.log) console.log(C.d(l));
