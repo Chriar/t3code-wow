@@ -11,8 +11,6 @@ import { holdOpen } from './hold-open.mjs';
 const windowsOnly = { skip: process.platform !== 'win32' && 'only Windows refuses to remove a file another program has open' };
 const CLI = fileURLToPath(new URL('../bin/t3code-wow.js', import.meta.url));
 
-// An install that lives entirely in one temp folder: the game, and every folder the
-// command would otherwise keep under the user's profile.
 function installed() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3wow é cli-'));
   const at = (...parts) => path.join(dir, ...parts);

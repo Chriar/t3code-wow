@@ -22,9 +22,6 @@ const MAC = process.platform === 'darwin';
 const WIN = process.platform === 'win32';
 const DATA_DIR = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 't3code-wow');
 const BIN_LINK = path.join(os.homedir(), '.local/bin/t3code-wow');
-// On Windows a symlink needs Developer Mode or an administrator, and a .js file doesn't
-// run by name. So install.ps1 writes a one-line .cmd instead, into a folder Windows puts
-// on every user's PATH.
 const BIN_SHIM = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData/Local'), 'Microsoft/WindowsApps/t3code-wow.cmd');
 const RERUN = WIN ? 'run the install command again' : 'run ./install.sh again';
 const DEFAULT_SLOTS = 1200;
@@ -202,8 +199,6 @@ const launchd = {
 
 const RUNNING_FILE = path.join(STATE_DIR, 'running.json');
 
-// systemd is the fallback for every platform without an entry. On Windows the task runs
-// `supervise`, which keeps `run` going the way systemd and launchd do themselves.
 const SERVICES = {
   darwin: () => launchd,
   win32: () => logonTask({ file: path.join(CONFIG_DIR, 't3code-wow.task.xml'), command: [...bridgeCommand().slice(0, 2), 'supervise'], runningFile: RUNNING_FILE }),
@@ -367,16 +362,12 @@ async function cmdRun(args) {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  // Only the Windows supervisor passes --parent: the process whose end means the logon
-  // task was stopped. Stopping the task ends nothing else, so the bridge watches for it.
   if (args.parent) stopWhenGone(Number(args.parent), stop);
   await bridge.start();
 }
 
-// What the Windows logon task runs. It isn't in help(), because nobody types it.
 async function cmdSupervise() {
   await supervise({ command: bridgeCommand(), logFile: path.join(STATE_DIR, 'bridge.log'), runningFile: RUNNING_FILE, parent: process.ppid });
-  // Windows ends a bridge that is still running along with this process.
   process.exit(0);
 }
 
@@ -446,7 +437,6 @@ async function ask(question) {
   return /^y(es)?$/i.test(answer.trim());
 }
 
-// Whether the .cmd in BIN_SHIM is the one install.ps1 wrote: it runs the copy in DATA_DIR.
 // The file is in the console's code page, which Node can't decode, so any letters
 // outside ASCII count as the same.
 function shimIsOurs() {
@@ -513,7 +503,6 @@ async function cmdUninstall(args) {
   const claims = tokenClaims(readToken() || '');
   const t3 = findT3Cli();
   if (claims?.sid && t3) {
-    // A session id t3Command() refuses is reported like any other failed revoke.
     let revoked = false;
     try {
       const [file, argv, options] = t3Command(t3, ['auth', 'session', 'revoke', claims.sid]);
@@ -665,8 +654,7 @@ if (!cmd || args.help || !commands[cmd]) {
 } else {
   Promise.resolve(commands[cmd](args)).catch((err) => {
     // Windows won't replace or remove a file another program has open (measured: EBUSY
-    // for a write, EPERM for a removal). Install and uninstall stop there with their
-    // settings intact, so running them again finishes the job.
+    // for a write, EPERM for a removal).
     if (WIN && ['EBUSY', 'EPERM'].includes(err.code)) err.message = `${err.dest || err.path || 'A file'} can't be changed right now: another program has it open, or this Windows account isn't allowed to write there. If World of Warcraft is running, quit it, then run this again.`;
     console.error(C.r(`✗ ${err.message}`));
     process.exitCode = 1;

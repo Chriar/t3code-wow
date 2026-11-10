@@ -6,11 +6,7 @@
 // so this is compiled on the player's PC each time the bridge starts, by the compiler
 // inside .NET Framework 4.x, which ships with Windows 10 and 11. That compiler stops at
 // C# 5: no string interpolation, no ?. operator, no expression-bodied members, no
-// `out var`, no nameof. `cd bridge && npm test` on Windows compiles this file, so a
-// newer construct fails there and not on someone's desktop.
-//
-// PowerShell only hosts the process. Run() reads and writes the process's own standard
-// streams as bytes, so nothing passes through PowerShell's text pipeline.
+// `out var`, no nameof.
 //
 // Protocol
 //
@@ -88,7 +84,6 @@ namespace T3CodeWow {
     const uint PW_CLIENTONLY = 1, PW_RENDERFULLCONTENT = 2;
     const int DWMWA_CLOAKED = 14;
 
-    /// Fills in the reply's fields and returns the bytes that follow it, or null for none.
     delegate byte[] Operation(Dictionary<string, object> request, Dictionary<string, object> reply);
 
     static readonly Dictionary<string, Operation> operations = new Dictionary<string, Operation> {
@@ -101,8 +96,6 @@ namespace T3CodeWow {
     static readonly JavaScriptSerializer json = new JavaScriptSerializer();
     static Stream output;
 
-    // Kept between grabs and only replaced when the size changes: at six grabs a
-    // second, fresh ones would keep the garbage collector busy next to a game.
     static Bitmap canvas;
     static byte[] row, rgb;
 
@@ -135,7 +128,6 @@ namespace T3CodeWow {
           data = operation(request, reply);
           reply["ok"] = true;
         } catch (Exception e) {
-          // One bad request never ends the helper.
           object id;
           reply.TryGetValue("id", out id);
           reply = new Dictionary<string, object>();
@@ -160,7 +152,6 @@ namespace T3CodeWow {
         } catch (ArgumentException) {
           // Gone already.
         } catch (Exception) {
-          // Windows won't let us watch it. Stdin closing still ends the helper.
           return;
         }
         Environment.Exit(0);
@@ -169,7 +160,6 @@ namespace T3CodeWow {
       watcher.Start();
     }
 
-    /// Write one frame: the JSON line with "bytes" set, then the data.
     static void Reply(Dictionary<string, object> head, byte[] data) {
       head["bytes"] = data == null ? 0 : data.Length;
       byte[] line = Encoding.UTF8.GetBytes(json.Serialize(head) + "\n");
@@ -178,16 +168,13 @@ namespace T3CodeWow {
         if (data != null) output.Write(data, 0, data.Length);
         output.Flush();
       } catch (IOException) {
-        // The bridge closed its end.
         Environment.Exit(0);
       }
     }
 
-    /// procs: every running program with this image name (no ".exe"). The path and
-    /// start time come from OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION), not from
-    /// Process.MainModule and Process.StartTime, which fail with "Access is denied" when
-    /// the game runs as administrator and the bridge doesn't. startMs is the creation
-    /// time as ms since 1970 UTC, so a change of time zone doesn't look like a new client.
+    /// The path and start time come from OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION),
+    /// not from Process.MainModule and Process.StartTime, which fail with "Access is
+    /// denied" when the game runs as administrator and the bridge doesn't.
     static byte[] Procs(Dictionary<string, object> request, Dictionary<string, object> reply) {
       List<object> procs = new List<object>();
       foreach (Process process in Process.GetProcessesByName((string)request["name"])) {
@@ -213,11 +200,9 @@ namespace T3CodeWow {
       return null;
     }
 
-    /// windows: every top-level window owned by `pid`, plus any titled exactly `title`
-    /// (for when the bridge doesn't know the pid). x, y, width and height describe the
-    /// client area, the part the game draws. The outer window rectangle would be wrong
-    /// by the title bar and by the invisible resize border Windows 10 and 11 add, which
-    /// is about as wide as the slack the decoder has.
+    /// x, y, width and height describe the client area, the part the game draws. The
+    /// outer window rectangle would be wrong by the title bar and by the invisible resize
+    /// border Windows 10 and 11 add, which is about as wide as the slack the decoder has.
     static byte[] Windows(Dictionary<string, object> request, Dictionary<string, object> reply) {
       uint pid = Convert.ToUInt32(request["pid"]);
       string wanted = (string)request["title"];
@@ -252,10 +237,6 @@ namespace T3CodeWow {
       return null;
     }
 
-    /// grab: the top-left w x h pixels of a window's client area, or of the screen at
-    /// x,y when there's no hwnd. The window's position is read here, in the same call
-    /// that copies the pixels, so a window being dragged isn't read from where it was.
-    ///
     /// Two ways to read a window (measured on a 3840x2160 HDR display, game window
     /// 2992x1683, both with correct colours):
     ///  - "screen": copy that rectangle of the screen. 17 ms, and the cost doesn't grow
@@ -298,10 +279,6 @@ namespace T3CodeWow {
       return Rgb(pixels, w, h);
     }
 
-    /// shot: a JPEG of the whole client area through PrintWindow, so a window on top of
-    /// the game isn't in the picture. It is scaled by 96 / the window's DPI, the size
-    /// the window has before display scaling: a 2992x1683 window at 150% becomes
-    /// 1995x1122, well under T3 Code's 10 MB limit.
     static byte[] Shot(Dictionary<string, object> request, Dictionary<string, object> reply) {
       IntPtr hwnd = new IntPtr(Convert.ToInt64(request["hwnd"]));
       string state = State(hwnd);
@@ -341,10 +318,8 @@ namespace T3CodeWow {
       return "ok";
     }
 
-    /// True when the window is what's on screen at fifteen points spread over the
-    /// rectangle, close enough that a window parked on the corner can't sit between
-    /// them. A point off every monitor has no window, so a corner dragged off screen
-    /// counts as covered. WindowFromPoint skips click-through overlays.
+    /// A point off every monitor has no window, so a corner dragged off screen counts as
+    /// covered. WindowFromPoint skips click-through overlays.
     static bool Uncovered(IntPtr hwnd, POINT origin, int w, int h) {
       for (int across = 0; across <= 4; across++) {
         for (int down = 0; down <= 2; down++) {
@@ -365,7 +340,6 @@ namespace T3CodeWow {
       return canvas;
     }
 
-    /// The window's whole client area, as Windows renders it for us.
     static Bitmap Print(IntPtr hwnd, RECT client) {
       Bitmap onto = Canvas(client.Right, client.Bottom);
       using (Graphics graphics = Graphics.FromImage(onto)) {
@@ -379,7 +353,6 @@ namespace T3CodeWow {
       return onto;
     }
 
-    /// The top-left w x h of a bitmap as packed RGB, the way codec.js reads an image.
     static byte[] Rgb(Bitmap bitmap, int w, int h) {
       if (row == null || row.Length != w * 4) row = new byte[w * 4];
       if (rgb == null || rgb.Length != w * h * 3) rgb = new byte[w * h * 3];

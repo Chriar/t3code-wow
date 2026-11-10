@@ -23,7 +23,6 @@ function hasLua() {
     return false;
   }
 }
-// Lua stays required on Linux and macOS. Windows rarely has it, so there these tests skip without it.
 const needsLua = { skip: process.platform === 'win32' && !hasLua() && 'lua5.1 is not installed' };
 
 function tempAddons(slots = 8) {
@@ -253,8 +252,6 @@ test('bells rotate: ringing k empties the bell four behind it', () => {
   for (let k = 1; k <= 8; k++) assert.equal(rung(dir, k), 0);
 });
 
-// Only Windows refuses to replace an open file, so elsewhere the bank stands in for the
-// game holding a slot open, once.
 function slotInUseOnce(b) {
   const held = {};
   b.bank.write = () => {
@@ -279,7 +276,6 @@ test('a ring that stops halfway leaves no stale bell rung, and ringing again fin
   const dir = tempAddons(2);
   const bank = new SlotBank(dir, { slots: 2 });
   for (let k = 1; k <= 4; k++) bank.raise(k);
-  // No system can put a file where a folder stands, so bell 5 can't be filled.
   fs.rmSync(bank.bellFile(5));
   fs.mkdirSync(bank.bellFile(5));
   assert.throws(() => bank.raise(5));
@@ -315,7 +311,6 @@ test('a new game client is recorded only once the bells of the last one are empt
   const { b, dir } = fakeBridge();
   b.persist.sigCounter = 3;
   b.bank.raise(2);
-  // Only Windows can keep a bell in use, so the bank stands in for the game playing one, once.
   b.bank.resetSignals = () => {
     delete b.bank.resetSignals;
     return false;
@@ -365,7 +360,7 @@ test('a command run just before the bridge stops is not run again by the next br
   const next = new Bridge({ addonsDir: dir, config: { slots: 8 }, log: () => {}, stateDir: b.stateDir });
   next.proc = b.proc;
   next.t3.sendMessage = async (...a) => calls.push(['sent again', ...a]);
-  next.onFrame(strip); // still on screen, because nothing acknowledged it
+  next.onFrame(strip);
   await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(calls.map((c) => c[0]), ['send']);
   next.stop();
@@ -435,7 +430,7 @@ test('state.json held open by another program: the save waits and the bridge kee
   const release = await holdOpen(b.stateFile);
   try {
     b.onFrame(strip(2));
-    await new Promise((r) => setTimeout(r, 400)); // past the 250 ms save timer
+    await new Promise((r) => setTimeout(r, 400));
     assert.equal(handled(), 1, 'the old state is whole');
     assert.deepEqual(fs.readdirSync(b.stateDir).filter((f) => f.endsWith('.tmp')), []);
   } finally {

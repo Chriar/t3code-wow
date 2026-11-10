@@ -134,12 +134,10 @@ test("finds Forever on Windows from Battle.net's records, its default install fo
   touch(path.join(sys, 'c/Program Files (x86)/World of Warcraft/_retail_/Wow.exe'));
   assert.deepEqual(win().wowOnly, [path.join(sys, 'c/Program Files (x86)/World of Warcraft')]);
 
-  // An install on another drive, recorded by Battle.net with forward slashes.
   touch(path.join(sys, 'c/ProgramData/Battle.net/Agent/product.db'), 'junk\x00\x12"D:/Jeux Vidéo/World of Warcraft\x00wowf');
   touch(path.join(sys, 'd/Jeux Vidéo/World of Warcraft/_forever_/Wow.exe'));
   assert.deepEqual(win().forever, [path.join(sys, 'd/Jeux Vidéo/World of Warcraft/_forever_')]);
 
-  // One Battle.net hasn't recorded yet, in the folder it installs games to.
   const config = path.join(home, 'AppData/Roaming/Battle.net/Battle.net.config');
   touch(config, JSON.stringify({ Client: { Install: { DefaultInstallPath: 'E:\\Games' } } }));
   touch(path.join(sys, 'e/Games/World of Warcraft/_forever_/Wow.exe'));

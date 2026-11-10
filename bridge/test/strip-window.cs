@@ -1,17 +1,5 @@
-// A stand-in for the game window, for windows-screen.test.js. PowerShell compiles it
-// the way it compiles src/windows-helper.cs, so it keeps to C# 5 as well.
-//
-// It shows a small window that draws strip cells at the top-left of its client area,
-// as the addon does at the top-left of the game's. The window stays on top and never
-// takes the keyboard. Its settings come from the environment:
-//
-//   T3WOW_STRIP_CELLS   one digit 0..7 per cell
-//   T3WOW_STRIP_AT      "x,y": where the window goes, in screen pixels
-//   T3WOW_STRIP_TITLE   the window's title
-//
-// It prints "shown <the window's DPI>" once it is on screen. A line "cover" on stdin
-// puts a second window over the strip's corner, and "uncover" takes it away. The
-// window closes when stdin closes, and after 20 seconds whatever happens.
+// PowerShell compiles this the way it compiles src/windows-helper.cs, so it keeps to
+// C# 5 as well.
 
 using System;
 using System.Drawing;

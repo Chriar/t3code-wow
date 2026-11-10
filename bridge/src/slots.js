@@ -67,7 +67,6 @@ export const LONG_SILENT_WAV = (() => {
 // in use blocks the event loop for about 30 ms (measured).
 const RETRY_MS = process.platform === 'win32' ? [10, 10] : [];
 const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
-// Slots and bells are written synchronously, so the wait between tries is too.
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 // Another program kept a file open past the retries. Nothing is half-written when
@@ -78,10 +77,9 @@ export class FileInUse extends Error {
   }
 }
 
-// Everything the running bridge writes for the game, and its own state.json, is
-// replaced through here. A reader sees the old content or the new, never part of
-// either. Returns false when the target was still in use after the retries, with the
-// target untouched and the temp file gone. Any other error throws at once.
+// A reader sees the old content or the new, never part of either. Returns false when
+// the target was still in use after the retries, with the target untouched and the
+// temp file gone. Any other error throws at once.
 export function replaceFile(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
   for (const wait of [0, ...RETRY_MS]) {
@@ -100,9 +98,6 @@ export function replaceFile(file, content) {
   return false;
 }
 
-// Put one bell in the state we want, rung or empty, writing only when its size is
-// wrong. The game re-reads a bell on every play, so one that's already right needs no
-// write, and a write we don't make can't collide with the game playing that file.
 function setBell(file, rung) {
   const want = rung ? LONG_SILENT_WAV : '';
   try {
@@ -236,10 +231,7 @@ export class SlotBank {
   }
 
   // Empty the bell four behind k, then fill bell k, so the addon's look-ahead window
-  // (k .. k+3) only ever sees bells raised after it last loaded. Bell k+4 is the same
-  // file as bell k-4. Emptying first means that stopping between the two writes, for
-  // a file in use or a crash, leaves no bell rung that shouldn't be, and ringing again
-  // finishes the job.
+  // (k .. k+3) only ever sees bells raised after it last loaded.
   raise(k) {
     setBell(this.bellFile(k - 4), false);
     setBell(this.bellFile(k), true);

@@ -1,5 +1,3 @@
-// Windows: running the bridge in the background.
-//
 // The bridge reads the screen, so it has to run in the player's own desktop session.
 // A Windows service can't (services live in session 0, which has no desktop). What
 // fits is a Task Scheduler task that starts when this user logs on. A normal user can
@@ -15,16 +13,6 @@
 //  - Logs. A task's output goes nowhere.
 //  - Stopping. Stopping the task ends conhost about a second later and nothing under
 //    it (measured: the Node processes were still running 2 s on).
-//
-//   Task Scheduler, at logon
-//     conhost.exe --headless                      no console window
-//       node t3code-wow.js supervise              restarts the bridge 3 s after it exits; owns bridge.log and running.json
-//         node t3code-wow.js run --parent <pid>   the bridge
-//           powershell.exe                        the desktop helper (windows.js)
-//
-// So the supervisor and the bridge both watch conhost's pid (stopWhenGone below) and
-// stop when it's gone. The bridge stops the way it does on SIGTERM, which saves its
-// state, and the supervisor waits a moment for that before it exits.
 //
 // Nothing here outlives the supervisor. Windows ends a Node program's children along
 // with it, because Node starts them in a job that closes when it exits (measured: a
@@ -43,11 +31,7 @@ const TASK = 't3code-wow';
 const SYSTEM32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 const LOG_ROTATE_BYTES = 1024 * 1024;
 const PARENT_CHECK_MS = 1000;
-// How long the supervisor waits for a bridge that is stopping.
 const BRIDGE_STOP_MS = 3000;
-// Measured: conhost is gone about 1 s after the task is stopped. The supervisor and
-// the bridge notice within PARENT_CHECK_MS, and the bridge gets BRIDGE_STOP_MS. What's
-// still running after this long is stuck, and is ended.
 const STOP_GRACE_MS = 8000;
 const POLL_MS = 100;
 
@@ -65,12 +49,9 @@ function exists(pid) {
 }
 
 /**
- * Run a fixed PowerShell script. Values go in through the environment and are read as
- * $env:NAME, so no value is ever spliced into the script's text.
  * @param {string} script
  * @param {Record<string, string>} env
- * @returns {{ ok: boolean, stdout: string }} `ok` is whether PowerShell exited 0. When it
- *   didn't, what it said is shown to the user.
+ * @returns {{ ok: boolean, stdout: string }}
  */
 function powershell(script, env) {
   const ran = spawnSync(POWERSHELL, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
@@ -82,21 +63,11 @@ function powershell(script, env) {
   return { ok: ran.status === 0, stdout: ran.stdout || '' };
 }
 
-// ---- The task -----------------------------------------------------------------------
-
 const xmlText = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
- * The task definition, in Task Scheduler's own XML. Pure: the places a mistake can
- * hide are the quoting of the command line and the escaping of names and paths (a
- * profile folder called "Tom & Jerry", say), and those are what the tests check.
- *
- * What the XML says:
- *   trigger     at logon of `user` only
- *   principal   `user`, in their desktop session, never elevated
- *   settings    no time limit, runs on battery, one instance at a time, normal priority
- *               (a task's defaults are 72 hours, mains power only and below normal)
- *   action      conhost.exe --headless "<command[0]>" "<command[1]>" ...
+ * The task definition, in Task Scheduler's own XML. A task's defaults are 72 hours,
+ * mains power only and below normal priority, which is why the settings name each one.
  *
  * @param {{ user: string, command: string[] }} task  `user` as DOMAIN\name. `command` is the program and its arguments.
  * @returns {string}
@@ -144,11 +115,8 @@ export function taskXml({ user, command }) {
   ].join('\n');
 }
 
-// The definition has no XML declaration, so the text PowerShell reads is the text Task
-// Scheduler gets. -Force replaces a task of the same name.
 const REGISTER = "$ErrorActionPreference = 'Stop'; Register-ScheduledTask -TaskName $env:T3WOW_TASK -Xml (Get-Content -Raw -Encoding UTF8 -LiteralPath $env:T3WOW_TASK_XML) -Force | Out-Null";
 const START = "$ErrorActionPreference = 'Stop'; Start-ScheduledTask -TaskName $env:T3WOW_TASK";
-// Nothing to stop or unregister isn't an error.
 const STOP = 'Stop-ScheduledTask -TaskName $env:T3WOW_TASK -ErrorAction SilentlyContinue; exit 0';
 const UNREGISTER = 'Stop-ScheduledTask -TaskName $env:T3WOW_TASK -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName $env:T3WOW_TASK -Confirm:$false -ErrorAction SilentlyContinue; exit 0';
 
@@ -171,7 +139,6 @@ const UNREGISTER = 'Stop-ScheduledTask -TaskName $env:T3WOW_TASK -ErrorAction Si
  */
 export function logonTask({ file, command, runningFile, name = TASK, user = `${process.env.USERDOMAIN || os.hostname()}\\${os.userInfo().username}`, graceMs = STOP_GRACE_MS }) {
   const env = { T3WOW_TASK: name, T3WOW_TASK_XML: file };
-  // The supervisor comes first, so it can't start another bridge while its tree is ended.
   const makeSureStopped = () => {
     const { supervisor, bridge } = waitForStop(runningFile, graceMs);
     for (const run of [supervisor, bridge]) if (run) windows.endTree(run.pid);
@@ -200,18 +167,6 @@ export function logonTask({ file, command, runningFile, name = TASK, user = `${p
     },
   };
 }
-
-// ---- Who is running -------------------------------------------------------------------
-//
-// One bridge at a time. Two would both read the same strip frame and run the same
-// command, so a message could reach the agent twice. Stopping the task ends only
-// conhost, so "the old bridge is gone" has to be seen, not assumed.
-//
-// The supervisor writes who is running to running.json in the state folder, and
-// nothing else writes that file. A new supervisor reads it before it starts, and
-// install, restart and remove read it before they start or delete anything. The file
-// is never cleared: whether the runs it names are still going is asked of Windows each
-// time, so a record left by a crash, a logoff or a power cut reads as "nobody".
 
 /**
  * One run of a program. Windows hands a pid to another program once its process is
@@ -248,18 +203,15 @@ const windows = {
   },
 };
 
-// A recorded run is still going when its pid's process was created in the minute before
-// `startMs`. A program that got the pid later was created after the recorded run ended,
-// so after `startMs`. Measured: Node counts its own start 14 to 17 ms after Windows
-// creates the process, and a child is created 3 ms before spawn() returns. The minute
-// allows for a computer busy logging on, and the slack for a clock set back meanwhile.
+// Measured: Node counts its own start 14 to 17 ms after Windows creates the process,
+// and a child is created 3 ms before spawn() returns. The minute allows for a computer
+// busy logging on, and the slack for a clock set back meanwhile.
 const STARTUP_MS = 60000;
 const CLOCK_SLACK_MS = 2000;
 
 const asRun = (value) => (Number.isInteger(value?.pid) && Number.isFinite(value?.startMs) ? { pid: value.pid, startMs: value.startMs } : null);
 
 /**
- * The runs on record that are still going.
  * @param {string} file
  * @param {Processes} system
  * @returns {Running}
@@ -271,7 +223,6 @@ function stillRunning(file, system) {
   } catch {}
   const runs = [asRun(recorded.supervisor), asRun(recorded.bridge)];
   const there = runs.filter((run) => run && system.exists(run.pid));
-  // Most of the time nothing on record exists any more, and Windows isn't asked.
   const created = there.length ? system.createdMs(there.map((run) => run.pid)) : new Map();
   const [supervisor, bridge] = runs.map((run) => {
     const at = run ? created.get(run.pid) : undefined;
@@ -281,11 +232,10 @@ function stillRunning(file, system) {
 }
 
 /**
- * Wait until everything on record has stopped, for at most `graceMs`.
  * @param {string} file
  * @param {number} graceMs
  * @param {Processes} [system]
- * @returns {Running}  What is still running at the end. Nothing, unless the time ran out.
+ * @returns {Running}
  */
 function waitForStop(file, graceMs, system = windows) {
   const end = Date.now() + graceMs;
@@ -293,8 +243,6 @@ function waitForStop(file, graceMs, system = windows) {
     const left = stillRunning(file, system);
     const pids = Object.values(left).filter(Boolean).map((run) => run.pid);
     if (!pids.length || Date.now() >= end) return left;
-    // The supervisor may record a new bridge while it's on its way out, so once these
-    // are gone the record is read again.
     while (pids.some((pid) => system.exists(pid)) && Date.now() < end) sleep(POLL_MS);
   }
 }
@@ -315,16 +263,13 @@ export function stopWhenGone(pid, onGone, everyMs = PARENT_CHECK_MS) {
   timer.unref();
 }
 
-// ---- The supervisor -------------------------------------------------------------------
-
 const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 
 /**
  * Keep the bridge running: start `command`, send what it prints to `logFile`, and
  * start it again `restartMs` after it exits, for any reason and with any exit code.
  * That is systemd's Restart=always with RestartSec=3 and launchd's KeepAlive, which
- * Windows doesn't offer here. `t3code-wow supervise` calls this, and only the logon
- * task runs that command.
+ * Windows doesn't offer here.
  *
  * Before the first bridge starts, whatever is on record gets `graceMs` to stop. A
  * supervisor still running then keeps the job, and this one doesn't start. A bridge
@@ -375,8 +320,6 @@ export async function supervise({ command, logFile, runningFile, parent, restart
   const me = { pid: process.pid, startMs: Math.round(Date.now() - process.uptime() * 1000) };
   const record = (bridge) => {
     const text = JSON.stringify({ supervisor: me, bridge });
-    // replaceFile() gives up after about 30 ms on a file another program has open. A
-    // virus scanner reading the last record can hold it that long, so ask again.
     for (let tries = 0; tries < 30 && !replaceFile(runningFile, text); tries++);
   };
   const stop = new AbortController();
@@ -389,8 +332,6 @@ export async function supervise({ command, logFile, runningFile, parent, restart
     record(bridge.pid ? { pid: bridge.pid, startMs: Date.now() } : null);
     const how = await Promise.race([bridge.ended, stopping]);
     if (stop.signal.aborted) {
-      // The bridge saves its state as it stops. Returning before it has would end it
-      // mid-save, because the caller exits and Windows takes the bridge with it.
       await Promise.race([bridge.ended, delay(BRIDGE_STOP_MS, undefined, { ref: false })]);
       return;
     }
@@ -401,11 +342,9 @@ export async function supervise({ command, logFile, runningFile, parent, restart
 }
 
 /**
- * Start the bridge with its output going to the log.
  * @param {string[]} command
  * @param {string} logFile
- * @returns {{ pid: number|undefined, ended: Promise<string> }}  `ended` resolves, with how
- *   it ended in words for the log, when the bridge has exited or couldn't start.
+ * @returns {{ pid: number|undefined, ended: Promise<string> }}
  */
 function startBridge(command, logFile) {
   const out = openLog(logFile);
@@ -423,7 +362,6 @@ function startBridge(command, logFile) {
   }
 }
 
-// The bridge matters more than its log: a log that can't be opened is done without.
 function openLog(logFile) {
   try {
     if (fs.statSync(logFile).size > LOG_ROTATE_BYTES) fs.renameSync(logFile, `${logFile}.1`);

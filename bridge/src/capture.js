@@ -4,8 +4,7 @@
 // Hyprland (and other wlroots compositors) allow screencopy, so `grim` can read the
 // game's pixels on Wayland. KDE Plasma's KWin doesn't, but its ScreenShot2 D-Bus
 // interface does the same job. X11 sessions use ImageMagick's `import`. macOS uses its
-// own `screencapture`, which needs the Screen Recording permission. Windows goes
-// through the helper process in windows.js.
+// own `screencapture`, which needs the Screen Recording permission.
 
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -269,9 +268,6 @@ export class StripCapture {
     this.winCache = null; // { pid, at, win }: window lookups cost an osascript run or several D-Bus calls
     this.macAsked = false;
     this.tmpDir = null;
-    // On Windows the same helper also finds the game's process. If it can't start, the
-    // bridge never sees a client and never polls, so this is the only way the reason
-    // reaches `t3code-wow status`. Each reason is logged once, not at every retry.
     if (process.platform === 'win32') {
       desktop.report = (message) => {
         if (message !== this.lastError) this.log(message);
@@ -364,8 +360,6 @@ export class StripCapture {
     if (backend === 'none') throw new Error('no capture backend: install grim (Wayland/wlroots) or ImageMagick (X11); on KDE Plasma the bridge uses busctl from systemd');
     const px = StripCapture.stripPixels(4);
     if (backend === 'windows') {
-      // The helper returns the corner of the client area, which starts at the game's UI
-      // origin: no scale to apply and no title bar to search past.
       const res = await desktop.grab(wowPid, { ...px, region: this.manualRegion });
       if (res.status === 'hidden') this.stats.notVisible++;
       return res;
@@ -452,7 +446,6 @@ export class StripCapture {
   async screenshot(wowPid) {
     const backend = this.resolveBackend();
     const name = `wow-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
-    // Windows renders the window itself, so this works while it's covered.
     if (backend === 'windows') return { ...(await desktop.screenshot(wowPid)), name };
     if (backend === 'kwin') {
       // KWin renders the window itself, so this works even while it's covered.

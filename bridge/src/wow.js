@@ -1,8 +1,7 @@
 // Finding the WoW: Forever install and the running client.
 //
 // On Linux the game runs under Wine or Proton, so we look through Wine prefixes. On
-// macOS it runs natively, from /Applications by default. On Windows it runs natively
-// too, wherever Battle.net put it.
+// macOS it runs natively, from /Applications by default.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,7 +9,6 @@ import os from 'node:os';
 import { desktop } from './windows.js';
 
 const FLAVOR = '_forever_';
-// An install folder as Battle.net writes it into product.db: a plain Windows path.
 const WIN_WOW_PATH = /[A-Za-z]:[\\/][^\x00-\x1f"]*?World of Warcraft(?=[\x00-\x1f"]|$)/g;
 // Omarchy's Battle.net installer (omarchy-install-gaming-battlenet) uses this prefix.
 export const OMARCHY_PREFIX = path.join(os.homedir(), 'Games/battlenet');
@@ -175,9 +173,6 @@ function macInstalls(system = '/') {
   return { forever, wowOnly, prefixes: battlenet };
 }
 
-// Windows: the same two Battle.net records as on macOS, then the Program Files folders.
-// `system` stands in for the drives in tests: "D:/Games" is <system>/d/Games, and the
-// folders Windows names in the environment are the usual ones on C:.
 function winInstalls(system) {
   const at = (win) => {
     const m = system && /^([A-Za-z]):[\\/]*(.*)$/.exec(win);
@@ -205,7 +200,6 @@ function winInstalls(system) {
   return { forever, wowOnly, prefixes: battlenet };
 }
 
-// Linux is the fallback for every platform without an entry.
 const INSTALLS = { darwin: macInstalls, win32: winInstalls };
 
 // { forever: [...WoW: Forever folders], wowOnly: [...WoW installs without Forever], prefixes: [...where Battle.net is] }
@@ -232,8 +226,7 @@ export function isForeverClient(cmdline) {
 // /proc/<pid>/stat, or the start time on macOS and Windows) distinguishes a restarted
 // client that happens to reuse a pid.
 //
-// Async on every platform because Windows has to ask its helper process. There a
-// helper that can't answer reads as no client.
+// On Windows a helper that can't answer reads as no client.
 export async function findWowProcess() {
   if (process.platform === 'win32') return desktop.processes('Wow').then(pickWinProcess, () => null);
   if (process.platform === 'darwin') return findMacProcess();
@@ -280,9 +273,8 @@ function findMacProcess() {
   return r.status === 0 ? parseMacProcesses(r.stdout) : null;
 }
 
-// The Forever client among the programs called Wow.exe: Retail and Classic run a
-// Wow.exe too, from _retail_ and _classic_. startTicks is when the process started, in
-// ms since 1970 UTC.
+// The Forever client among the programs called Wow.exe. startTicks is when the process
+// started, in ms since 1970 UTC.
 export function pickWinProcess(procs) {
   const p = procs.find((x) => /[\\/]_forever_[\\/]+Wow\.exe$/i.test(x.path || ''));
   return p ? { pid: p.pid, startTicks: p.startMs } : null;

@@ -13,7 +13,6 @@ const windowsOnly = { skip: process.platform !== 'win32' && 'needs Task Schedule
 const FAKE_BRIDGE = fileURLToPath(new URL('./fake-bridge.mjs', import.meta.url));
 const RUN_SUPERVISOR = fileURLToPath(new URL('./run-supervisor.mjs', import.meta.url));
 
-// A state folder for one test, and what a fake bridge is started with.
 function sandbox(name = 't3wow-service-') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), name));
   const journal = path.join(dir, 'journal');
@@ -49,7 +48,6 @@ async function until(done, what, ms = 10000) {
   }
 }
 
-// Stands in for the logon task's conhost: the process a supervisor and its bridge stop with.
 function fakeTask() {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   return {
@@ -61,8 +59,6 @@ function fakeTask() {
   };
 }
 
-// A supervisor in this process, on a task of its own. `stopped()` ends the task and
-// resolves when the supervisor has returned.
 function supervisor(box, bridgeOptions, options = {}) {
   const task = fakeTask();
   const returned = supervise({ command: box.bridge(...bridgeOptions), logFile: box.logFile, runningFile: box.runningFile, parent: task.pid, restartMs: 20, checkMs: 20, ...options });
@@ -77,8 +73,6 @@ function supervisor(box, bridgeOptions, options = {}) {
 
 const startedMs = () => Math.round(Date.now() - process.uptime() * 1000);
 
-// Stands in for Windows where a test needs a process that isn't there. `created` says
-// when each pid's process was created, and `gone` when it stops existing.
 function fakeProcesses({ created = new Map(), gone = new Map() } = {}) {
   const ended = [];
   return {
@@ -151,7 +145,6 @@ test('a second supervisor does not start while the first is running its bridge',
   const first = supervisor(box, []);
   await until(() => box.events('start').length === 1, 'the first bridge is running');
   try {
-    // What Windows would say about this test's own process, which is the first supervisor.
     const system = fakeProcesses({ created: new Map([[process.pid, startedMs() - 15]]) });
     const second = supervisor(box, [], { graceMs: 300, system });
     await assert.rejects(second.returned, /another supervisor/);
@@ -165,8 +158,6 @@ test('a second supervisor does not start while the first is running its bridge',
 
 test('a record left by a supervisor that is gone does not stop the next one, even when another program has its pid now', async () => {
   const box = sandbox();
-  // This test's process stands in for the stranger: it has the pid, and was created an
-  // hour after the recorded supervisor started.
   record(box, { supervisor: { pid: process.pid, startMs: startedMs() - 3600000 }, bridge: null });
   const system = fakeProcesses({ created: new Map([[process.pid, startedMs() - 15]]) });
   const { stopped } = supervisor(box, ['exit=0'], { graceMs: 300, system });
@@ -197,21 +188,18 @@ test('a bridge that outlived its supervisor: the next supervisor waits for it to
   }
 });
 
-// Windows tests register their task under a name of their own, never the real one.
 const throwaway = () => `t3code-wow-test-${process.pid}-${Date.now()}`;
 
 function ask(script, env) {
   return spawnSync(POWERSHELL, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true, env: { ...process.env, ...env } }).stdout.trim();
 }
 
-// What Task Scheduler holds under this name, or null.
 function registered(name) {
   const script = "$t = Get-ScheduledTask -TaskName $env:T3WOW_TASK -ErrorAction SilentlyContinue; if ($t) { @{ limit = $t.Settings.ExecutionTimeLimit; mainsOnly = $t.Settings.DisallowStartIfOnBatteries; stopOnBattery = $t.Settings.StopIfGoingOnBatteries; priority = $t.Settings.Priority; second = \"$($t.Settings.MultipleInstances)\"; logon = \"$($t.Principal.LogonType)\"; level = \"$($t.Principal.RunLevel)\" } | ConvertTo-Json }";
   const found = ask(script, { T3WOW_TASK: name });
   return found ? JSON.parse(found) : null;
 }
 
-// The pids of every process whose command line names this folder.
 function processesUnder(dir) {
   const script = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:T3WOW_DIR) } | ForEach-Object { $_.ProcessId }";
   return ask(script, { T3WOW_DIR: dir }).split(/\r?\n/).filter(Boolean).map(Number);
@@ -253,7 +241,6 @@ test('stopping the task ends everything under it, and a restart or an update nev
   const file = path.join(box.dir, 'task.xml');
   const command = (...bridgeOptions) => [process.execPath, RUN_SUPERVISOR, box.logFile, box.runningFile, '200', ...box.bridge(...bridgeOptions)];
   const polite = logonTask({ name, file, runningFile: box.runningFile, command: command('slow=700') });
-  // A bridge that never stops by itself, and a task that gives it 1.5 s to.
   const stuck = logonTask({ name, file, runningFile: box.runningFile, command: command('deaf'), graceMs: 1500 });
   const starts = () => box.events('start');
   try {

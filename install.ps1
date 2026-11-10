@@ -40,8 +40,7 @@ try {
       throw "T3 Code for World of Warcraft needs Node.js 22 or newer; found $(& node --version)."
     }
 
-    # Install from this checkout, or download the latest version when piped from irm.
-    # $PSScriptRoot is empty then, which is how the two are told apart.
+    # $PSScriptRoot is empty when this is piped from irm.
     $source = $null
     if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'bridge')) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'addon'))) {
       $source = $PSScriptRoot
@@ -64,8 +63,6 @@ try {
         $source = (Get-ChildItem -LiteralPath $tmp -Directory | Select-Object -First 1).FullName
       }
 
-      # Copy the new code beside the old, then swap. Stopped halfway, the next run
-      # removes the leftover .new folders and does the whole swap again.
       New-Item -ItemType Directory -Force -Path $dest, $bin | Out-Null
       foreach ($part in 'bridge', 'addon') {
         $new = Join-Path $dest "$part.new"
@@ -86,8 +83,7 @@ try {
     # comes back to read it. That lets `t3code-wow uninstall` delete this file while it
     # runs, and makes Node's exit code the command's (both measured). The path starts
     # from %USERPROFILE% where it can, so a profile folder with letters the console's
-    # code page lacks still works. `node` comes from PATH on purpose: a person types
-    # this, and it should follow whatever Node they have now.
+    # code page lacks still works.
     $cli = Join-Path $dest 'bridge\bin\t3code-wow.js'
     $shim = Join-Path $bin 't3code-wow.cmd'
     $target = $cli.Replace('%', '%%')

@@ -1,14 +1,9 @@
-// For the tests of what only Windows does: refuse to replace or remove a file another
-// program has open.
-
 import { spawn } from 'node:child_process';
 import { POWERSHELL } from '../src/windows.js';
 
 /**
- * Another process opens the file for reading and lets others read it, but not write,
- * replace or delete it, the way the game might hold a file.
  * @param {string} file
- * @returns {Promise<() => Promise<void>>} A function that closes the file again.
+ * @returns {Promise<() => Promise<void>>}
  */
 export function holdOpen(file) {
   const script = "$f = [IO.File]::Open($env:T3WOW_HOLD, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('held'); [void][Console]::In.ReadLine(); $f.Close()";

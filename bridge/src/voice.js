@@ -92,7 +92,6 @@ export class Voice {
     this.hush();
     let child;
     if (engine.kind === 'custom') {
-      // Node picks the shell: /bin/sh -c as before, and cmd.exe on Windows.
       child = spawn(engine.cmd, { shell: true, stdio: ['pipe', 'ignore', 'ignore'] });
       child.stdin.end(text);
     } else if (engine.kind === 'spd') {

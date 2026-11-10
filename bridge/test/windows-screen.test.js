@@ -1,13 +1,3 @@
-// Reads a real strip off a real screen, through everything the bridge uses on Windows:
-// StripCapture, the PowerShell helper, a copy of the screen and PrintWindow. It draws a
-// small window (strip-window.cs) for a few seconds, so it only runs when asked:
-//
-//   T3WOW_SCREEN_TEST=100,100 npm test                 in bash
-//   $env:T3WOW_SCREEN_TEST = '100,100'; npm test       in PowerShell
-//
-// The value is where the window goes, in screen pixels. The window stays on top and
-// never takes the keyboard.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -23,7 +13,7 @@ const asked = { skip: !at && 'it draws a window: on Windows, set T3WOW_SCREEN_TE
 
 const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const SHOW = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_STRIP_SRC -ReferencedAssemblies System.Windows.Forms,System.Drawing; [T3CodeWow.StripWindow]::Run()";
-const CLIENT = { width: 700, height: 220 }; // strip-window.cs makes its client area this size
+const CLIENT = { width: 700, height: 220 };
 
 function showStrip(cells) {
   return spawn(POWERSHELL, ['-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', SHOW], {
@@ -39,7 +29,6 @@ function showStrip(cells) {
   });
 }
 
-// Fails where the suite would otherwise hang on something that never ends.
 function within(ms, promise, what) {
   let timer;
   const late = new Promise((_, reject) => {
@@ -48,7 +37,6 @@ function within(ms, promise, what) {
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
-// Width and height from a JPEG file's frame header.
 function jpegSize(data) {
   for (let i = 2; i < data.length; i += 2 + data.readUInt16BE(i + 2)) {
     if (data[i + 1] >= 0xc0 && data[i + 1] <= 0xc2) return { width: data.readUInt16BE(i + 7), height: data.readUInt16BE(i + 5) };
@@ -64,7 +52,6 @@ test('a strip in a real window is read off the screen, and through the window wh
     const dpi = Number(shown.split(' ')[1]);
     const capture = new StripCapture({});
 
-    // Windows takes a moment to put a window on screen, so grab until the strip is read that way.
     const read = async (via) => {
       const end = Date.now() + 3000;
       for (;;) {

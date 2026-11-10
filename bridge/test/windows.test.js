@@ -16,7 +16,6 @@ const explorer = { pid: 77, path: 'C:\\Windows\\explorer.exe', startMs: Date.UTC
 const win = (hwnd, pid, extra = {}) => ({ hwnd, pid, className: 'waApplication Window', title: 'World of Warcraft', visible: true, minimized: false, x: 503, y: 260, width: 2992, height: 1683, ...extra });
 const corner = { width: 672, height: 192 };
 
-// A Desktop on the stand-in helper, and every helper it has started.
 function fakeDesktop(scenario, options = {}) {
   const helpers = [];
   const launch = () => {
@@ -26,13 +25,11 @@ function fakeDesktop(scenario, options = {}) {
   return { desktop: new Desktop({ launch, ...options }), helpers };
 }
 
-// A file the stand-in helper writes each request to, and a reader for it.
 function requestLog() {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-helper-')), 'requests');
   return { file, read: () => fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line)) };
 }
 
-// Desktop pauses before it starts another helper, so ask until one answers.
 async function eventually(ask) {
   const end = Date.now() + 5000;
   for (;;) {
@@ -62,7 +59,6 @@ async function until(done, what) {
   }
 }
 
-// Fails where the suite would otherwise hang on something that never ends.
 function within(ms, promise, what) {
   let timer;
   const late = new Promise((_, reject) => {
@@ -73,7 +69,6 @@ function within(ms, promise, what) {
 
 test('replies cut anywhere by the pipe come out whole and in order', () => {
   const frame = (head, data = Buffer.alloc(0)) => Buffer.concat([Buffer.from(`${JSON.stringify({ ...head, bytes: data.length })}\n`), data]);
-  // Every byte value, so the data holds line ends that must not be read as one.
   const pixels = Buffer.from(Array.from({ length: 600 }, (_, i) => i % 256));
   const stream = Buffer.concat([frame({ id: 1 }, pixels), frame({ id: 2 }), frame({ id: 3 }, pixels.subarray(0, 5))]);
   for (let cut = 0; cut <= stream.length; cut++) {
@@ -135,7 +130,6 @@ test('a command that asked the desktop one question exits, and its helper goes w
     };
     await new Desktop({ launch }).processes('Wow');
   `;
-  // A command that hangs on its helper is killed after 10 s and fails the exit code check.
   const command = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'], timeout: 10000 });
   let printed = '';
   command.stdout.on('data', (d) => (printed += d));

@@ -1,19 +1,9 @@
-// Windows: the game's window, its pixels and the list of running programs.
-//
 // Node can't call the Windows API, and starting PowerShell for each capture costs
 // 0.3 to 1.3 s, far too slow for a loop that runs every 150 ms. So one PowerShell
 // process stays running for as long as the bridge does. It compiles windows-helper.cs
 // when it starts (Add-Type, part of the Windows PowerShell 5.1 that ships with Windows,
 // so there's nothing to install or build) and then answers requests on its standard
-// input and output:
-//
-//   bridge -> helper   one line of JSON   {"id":7,"op":"grab","hwnd":329842,"w":672,"h":192}
-//   helper -> bridge   one line of JSON   {"id":7,"ok":true,"state":"ok","via":"screen","width":672,"height":192,"bytes":387072}
-//                      then exactly `bytes` raw bytes (packed RGB, or a JPEG file)
-//
-// The helper answers one request at a time, in the order they were written, so the
-// bridge may write several without waiting. Nothing outside this file sees a line of
-// that protocol, a window handle or the child process.
+// input and output.
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -36,7 +26,7 @@ import { fileURLToPath } from 'node:url';
  * @typedef {object} WinWindow
  * @property {number} hwnd
  * @property {number} pid
- * @property {string} className   "waApplication Window" for the game.
+ * @property {string} className
  * @property {string} title
  * @property {boolean} visible    False for the hidden helper windows a program owns.
  * @property {boolean} minimized  Windows gives a minimized window an empty client area, so its size says nothing.
@@ -64,13 +54,10 @@ const HELPER_SRC = fileURLToPath(new URL('./windows-helper.cs', import.meta.url)
 const BOOT = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_HELPER_SRC -ReferencedAssemblies System.Drawing,System.Web.Extensions; [T3CodeWow.Helper]::Run()";
 
 const READY_TIMEOUT_MS = 15000; // compiling takes 0.3 to 1.3 s here; a cold disk or a virus scan can take longer
-const WINDOW_CACHE_MS = 2000; // the same age the macOS and KWin lookups allow
-const RESTART_AFTER_MS = [0, 1000, 2000, 5000, 15000, 30000]; // by how many helpers in a row have failed
+const WINDOW_CACHE_MS = 2000;
+const RESTART_AFTER_MS = [0, 1000, 2000, 5000, 15000, 30000];
 
 /**
- * Starts the real helper. Tests pass Desktop their own launcher (a Node script that
- * speaks the same protocol), which is how Desktop runs under `node --test` on any
- * system without PowerShell or a game.
  * @param {number} [parentPid]  The helper exits when this process is gone.
  * @returns {import('node:child_process').ChildProcess}
  */
@@ -86,7 +73,7 @@ export function launchHelper(parentPid = process.pid) {
  * The complete frames at the start of `buffer`, and the bytes left over.
  * @param {Buffer} buffer
  * @returns {{ frames: Frame[], rest: Buffer }}
- * @throws {Error} when a line isn't a frame's JSON. The caller restarts the helper.
+ * @throws {Error} when a line isn't a frame's JSON.
  */
 export function splitFrames(buffer) {
   const frames = [];
@@ -122,7 +109,6 @@ export function pickWinWindow(windows, pid) {
   return win ? { found: true, hwnd: win.hwnd } : { found: false };
 }
 
-// Why there's no screenshot, by the state the helper reports for the window.
 const NO_SHOT = {
   gone: "couldn't find the game window",
   minimized: 'the game window is minimized',
@@ -136,34 +122,13 @@ export const whatPowerShellSaid = (stderr) => stderr.split(/\r?\nAt line:/)[0].r
 /**
  * The Windows desktop, through one long-lived helper process.
  *
- * The helper's life, as a table. `queue` is the requests written but not yet answered.
- *
- *   state     event                                   next      what happens
- *   idle      a request, at or after `retryAt`        starting  launch; write the request
- *   idle      a request before `retryAt`              idle      reject at once with the last error
- *   starting  the hello frame                         ready
- *   starting  exit, or READY_TIMEOUT_MS without hello idle      fail(what PowerShell printed on stderr)
- *   ready     a reply frame whose id heads the queue  ready     resolve it; failures = 0
- *   ready     exit                                    idle      fail('the helper stopped')
- *   ready     no reply in time to the request at the  idle      kill the child, then fail(...). A late or
- *             head of the queue, a reply with the                misplaced reply would be handed to the
- *             wrong id, or a line that isn't JSON                wrong caller.
- *   any       stop()                                  idle      end stdin; reject the queue; no failure counted
- *
- *   A request made while starting or ready is written at once and joins the queue.
- *
- *   fail(reason): reject every request in the queue, failures++,
- *                 retryAt = now + RESTART_AFTER_MS[min(failures, last)], report(reason).
- *
- * So a crashed or hung helper costs the captures in flight (poll() turns each into
- * status 'error'), and a request after the pause starts a new one. A helper that can't
- * start at all (PowerShell locked down, say) is retried at most every 30 s instead of
- * in a loop.
+ * A crashed or hung helper costs the captures in flight, and a request after the pause
+ * starts a new one. A helper that can't start at all (PowerShell locked down, say) is
+ * retried at most every 30 s instead of in a loop.
  *
  * Stopping with the bridge needs no call. The helper exits when its stdin closes,
  * which Windows does for us however the bridge ends, including when Task Scheduler
- * kills it. The helper also watches the bridge's pid on a second thread, for the case
- * where it's stuck inside a Windows call and can't notice stdin.
+ * kills it.
  *
  * The child and its pipes never keep this process alive. While the helper is starting
  * or a request is in flight, the time limit on it does. So a command like
@@ -179,7 +144,6 @@ export class Desktop {
   #queue = [];
   #rest = Buffer.alloc(0);
   #stderr = '';
-  /** The time limit on what the helper is doing now: starting, or answering the head of the queue. */
   #timer = null;
   #nextId = 1;
   #failures = 0;
@@ -191,9 +155,7 @@ export class Desktop {
   #timeoutMs;
 
   /**
-   * Called with a plain-language message each time the helper fails to start or
-   * stops. StripCapture points this at its log and its lastError, which is how
-   * `t3code-wow status` can say why the game isn't being found.
+   * Called with a plain-language message each time the helper fails to start or stops.
    * @type {(message: string) => void}
    */
   report = () => {};
@@ -214,7 +176,6 @@ export class Desktop {
    * @returns {Promise<WinProcess[]>}
    */
   async processes(name) {
-    // Measured at 6 ms. The limit only has to end before the bridge's next check, 4 s on.
     return (await this.#request('procs', { name }, 3000)).head.procs;
   }
 
@@ -241,7 +202,6 @@ export class Desktop {
     if (from.hwnd === null) return { status: 'no-window' };
     const { head, data } = await this.#request('grab', { ...from, w: width, h: height }, 4000);
     if (head.state === 'ok') return { status: 'ok', image: { width: head.width, height: head.height, data }, via: head.via };
-    // The game closed or made a new window: look again next time.
     if (head.state === 'gone') this.#window = null;
     return { status: head.state === 'gone' ? 'no-window' : 'hidden' };
   }
@@ -270,8 +230,6 @@ export class Desktop {
   }
 
   /**
-   * The game's window handle, looked up at most every WINDOW_CACHE_MS, and again as
-   * soon as a grab says the handle is gone.
    * @param {number|undefined} pid
    * @returns {Promise<number|null>}
    */
@@ -285,11 +243,9 @@ export class Desktop {
   }
 
   /**
-   * Write one request and wait for its reply. A reply with ok:false rejects with the
-   * helper's message.
    * @param {string} op
    * @param {Record<string, string|number>} args
-   * @param {number} timeoutMs  Counted from when the helper starts on this request.
+   * @param {number} timeoutMs
    * @returns {Promise<Frame>}
    */
   #request(op, args, timeoutMs) {
@@ -298,7 +254,6 @@ export class Desktop {
       const id = this.#nextId++;
       this.#queue.push({ id, timeoutMs: this.#timeoutMs ?? timeoutMs, resolve, reject });
       if (this.#state === 'idle') this.#start();
-      // A helper that couldn't be launched has failed the queue already.
       if (this.#state === 'idle') return;
       this.#child.stdin.write(`${JSON.stringify({ id, op, ...args })}\n`);
       if (this.#state === 'ready' && this.#queue.length === 1) this.#limitHead();
@@ -381,7 +336,6 @@ export class Desktop {
     this.report(reason);
   }
 
-  /** Forget the child and hand back the requests it still owed. */
   #toIdle() {
     clearTimeout(this.#timer);
     const waiting = this.#queue;
@@ -392,8 +346,4 @@ export class Desktop {
   }
 }
 
-/**
- * The bridge's one helper. capture.js reads the strip and takes screenshots through
- * it, and wow.js asks it which programs are running. It starts on first use.
- */
 export const desktop = new Desktop();

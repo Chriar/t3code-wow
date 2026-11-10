@@ -1,16 +1,3 @@
-// A stand-in for the bridge, for the supervisor's tests.
-//
-//   node fake-bridge.mjs <journal> [exit=CODE] [live=MS] [slow=MS] [deaf] --parent <pid>
-//
-// It appends one line of JSON to <journal> when it starts and one when it stops, so a
-// test can see which bridges ran, when, and whether an earlier one was still running.
-//
-//   exit=CODE   exit with this code after live=MS (default 0 ms), like a bridge that crashes
-//   slow=MS     take this long to stop once the supervisor is gone
-//   deaf        never stop by itself, like a bridge that hangs
-//
-// Without exit= it runs until its supervisor is gone, as `t3code-wow run --parent` does.
-
 import fs from 'node:fs';
 import { stopWhenGone } from '../src/windows-service.js';
 

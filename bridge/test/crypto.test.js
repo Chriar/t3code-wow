@@ -35,7 +35,7 @@ test('strip keys: one per install, kept private', () => {
   const a = loadOrCreateKey(dir);
   assert.equal(a.length, 32);
   assert.deepEqual(loadOrCreateKey(dir), a);
-  // Windows has no file modes. The profile folder's permissions protect the key.
+  // Windows has no file modes.
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, 'strip.key')).mode & 0o777, 0o600);
   assert.equal(deriveKeys(a).hex.length, 128);
 });

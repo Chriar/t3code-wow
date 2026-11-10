@@ -22,8 +22,7 @@ export function tokenClaims(token) {
 
 export function findT3Cli() {
   if (process.platform === 'win32') {
-    // T3 Code writes a batch file here. A file called plain `t3` beside it is a shell
-    // script for Git Bash, which Windows itself can't run.
+    // T3 Code writes a batch file here.
     const home = os.homedir();
     const known = [process.env.T3_CLI, path.join(home, '.t3/bin/t3.cmd'), path.join(home, '.local/bin/t3.cmd'), path.join(home, '.local/bin/t3.exe')];
     const onPath = (process.env.PATH || '').split(path.delimiter).filter(Boolean).flatMap((dir) => [path.join(dir, 't3.cmd'), path.join(dir, 't3.exe')]);
@@ -46,9 +45,8 @@ export function findT3Cli() {
   return null;
 }
 
-// Every argument the bridge gives t3 fits this: fixed words, the label "WoW bridge" and
-// a session id. Anything else is refused, because inside a cmd.exe command line
-// & | < > ^ % ! and " all mean something, and no quoting covers them all.
+// Anything else is refused, because inside a cmd.exe command line & | < > ^ % ! and "
+// all mean something, and no quoting covers them all.
 const CMD_SAFE_ARG = /^[A-Za-z0-9 _.,:=@+\/()-]*$/;
 // A batch file's own path sits inside quotes, where cmd.exe still reads these three.
 // Measured: accents, spaces, & and ' in a profile folder's name all arrive intact.
