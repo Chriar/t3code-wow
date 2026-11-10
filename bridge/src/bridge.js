@@ -1017,8 +1017,10 @@ export class Bridge {
       }
     } catch (err) {
       if (err instanceof FileInUse) {
-        this.inUseCount = (this.inUseCount || 0) + 1;
-        if (this.inUseCount % 25 === 1) this.log(`update waiting: ${err.message}`);
+        if (Date.now() - (this.inUseLoggedAt || 0) >= 30000) {
+          this.inUseLoggedAt = Date.now();
+          this.log(`update waiting: ${err.message}`);
+        }
         this.lastDigest = null;
         this.lastPublishAt = Date.now();
         this.markDirty('important');

@@ -352,6 +352,21 @@ test('an update that was refused is still owed when nothing else has changed', (
   b.stop();
 });
 
+test('a file that stays in use is logged once, and again when it is still in use half a minute on', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { b } = fakeBridge();
+  t.after(() => b.stop());
+  b.bank.write = () => {
+    throw new FileInUse(b.bank.slotFile(1));
+  };
+  const logged = () => b.logs.filter((line) => line.includes('update waiting')).length;
+  for (let tries = 0; tries < 60; tries++) b.publishNow('test');
+  assert.equal(logged(), 1);
+  t.mock.timers.tick(30000);
+  b.publishNow('test');
+  assert.equal(logged(), 2);
+});
+
 test('a command run just before the bridge stops is not run again by the next bridge', async () => {
   const { b, dir, calls } = fakeBridge();
   const strip = frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0'], ['C', 1, 'send', 't1', 'hello']]);
