@@ -425,9 +425,14 @@ export class Bridge {
     c.version = hello.version;
     // Which model list the addon holds; it's only sent again when this differs.
     c.modelsHash = hello.models;
-    // What it holds of the parts a publish may leave out. A stale answer only costs
-    // an update that repeats them, never one that leaves out something it lacks.
-    c.hashes = { list: hello.list, projects: hello.projects, view: hello.viewHash };
+    // What it holds of the parts a publish may leave out. Only trust a hello that has
+    // applied our latest publish: that's the one point where it can't have moved on
+    // since it spoke. The strip stays on screen and is decoded again on every poll, so
+    // this is also what keeps a pre-publish hello from re-arming what `publishNow`
+    // cleared.
+    if (hello.gen >= this.lastGen) {
+      c.hashes = { list: hello.list, projects: hello.projects, view: hello.viewHash };
+    }
     c.lastSeen = Date.now();
     this.persist.slotGuess = c.slotNext;
 

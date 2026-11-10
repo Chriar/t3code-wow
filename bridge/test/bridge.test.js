@@ -148,11 +148,19 @@ test('a part that changes and changes back is sent again, not assumed', () => {
   projection.messages.push({ role: 'assistant', text: 'two', createdAt: '2026-11-01T00:00:01Z' });
   assert.ok(b.publishNow('test'));
   assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '2', 'changed: sent');
+  // The strip stays on screen and the capture loop decodes it again; that hello was
+  // drawn before this publish, so it must not re-arm the hash the publish cleared.
+  const hello = (seq, gen) => b.onFrame(frame(seq, [['H', 1, 'sess', 'ui1', 4, 1, gen, 'o', 't1', '0.1.0', '8', '', first.x.l, first.x.p, first.x.v]]));
+  hello(50, 0);
+  assert.equal(b.client.hashes.view, null, 'an old hello does not re-arm a cleared hash');
   // It goes back to exactly what the addon last reported. The addon holds the
   // two-message one, so this must be sent rather than assumed.
   projection.messages.pop();
   assert.ok(b.publishNow('test'));
   assert.equal(slotValue(dir, 4, 't.view and #t.view.msgs or "none"'), '1', 'back to an older hash: still sent');
+  // A hello that has applied our latest publish is trusted again.
+  hello(51, b.lastGen);
+  assert.equal(b.client.hashes.view, first.x.v, 'a confirming hello is trusted');
   b.stop();
 });
 
