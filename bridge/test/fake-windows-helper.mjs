@@ -5,7 +5,7 @@ import readline from 'node:readline';
  * @typedef {object} Scenario
  * @property {Record<string, import('../src/windows.js').WinProcess[]>} [procs]
  * @property {import('../src/windows.js').WinWindow[]} [windows]
- * @property {Record<string, 'ok'|'gone'|'minimized'|'cloaked'>} [states]
+ * @property {Record<string, 'ok'|'gone'|'minimized'|'cloaked'|'hung'>} [states]
  * @property {'screen'|'window'} [via]
  * @property {number[]} [pixel]
  * @property {number[]} [jpeg]

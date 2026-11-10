@@ -113,6 +113,7 @@ const NO_SHOT = {
   gone: "couldn't find the game window",
   minimized: 'the game window is minimized',
   cloaked: 'the game window is on another desktop',
+  hung: "the game window isn't responding",
 };
 
 // PowerShell prints an error as its message, hard-wrapped at the width of a console

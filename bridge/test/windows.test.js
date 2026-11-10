@@ -179,8 +179,8 @@ test('grab: a window that closed reads as no-window, and the next grab looks aga
   none.desktop.stop();
 });
 
-test('grab: minimized, or on another virtual desktop, reads as hidden', async () => {
-  for (const state of ['minimized', 'cloaked']) {
+test('grab: minimized, on another virtual desktop, or covered and not responding, reads as hidden', async () => {
+  for (const state of ['minimized', 'cloaked', 'hung']) {
     const { desktop } = fakeDesktop({ windows: [win(7, 5)], states: { 7: state } });
     assert.deepEqual(await desktop.grab(5, corner), { status: 'hidden' }, state);
     desktop.stop();
@@ -205,6 +205,10 @@ test('screenshot: the JPEG the helper made, or the reason there is none', async 
   const minimized = fakeDesktop({ windows: [win(7, 5)], states: { 7: 'minimized' } });
   await assert.rejects(minimized.desktop.screenshot(5), /minimized/);
   minimized.desktop.stop();
+
+  const hung = fakeDesktop({ windows: [win(7, 5)], states: { 7: 'hung' } });
+  await assert.rejects(hung.desktop.screenshot(5), /isn't responding/);
+  hung.desktop.stop();
 
   const missing = fakeDesktop({ windows: [] });
   await assert.rejects(missing.desktop.screenshot(5), /find the game window/);

@@ -28,7 +28,8 @@
 //   shot      hwnd, quality         state, width, height                          a JPEG file
 //
 //   state: "ok" | "gone" (not a window any more) | "minimized" | "cloaked" (on another
-//          virtual desktop). The other fields and the data are only sent with "ok".
+//          virtual desktop) | "hung" (not answering, and reading it needed PrintWindow).
+//          The other fields and the data are only sent with "ok".
 //   via:   "screen" | "window", how grab read the pixels.
 //
 // All positions and sizes are physical pixels of the whole desktop. The helper exits
@@ -72,6 +73,7 @@ namespace T3CodeWow {
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
 
@@ -261,6 +263,10 @@ namespace T3CodeWow {
         h = Math.Min(h, client.Bottom);
         fromScreen = Uncovered(hwnd, origin, w, h);
         pixels = fromScreen ? Canvas(w, h) : Print(hwnd, client);
+        if (pixels == null) {
+          reply["state"] = "hung";
+          return null;
+        }
       } else {
         origin.X = Convert.ToInt32(request["x"]);
         origin.Y = Convert.ToInt32(request["y"]);
@@ -286,6 +292,10 @@ namespace T3CodeWow {
       RECT client;
       GetClientRect(hwnd, out client);
       Bitmap full = Print(hwnd, client);
+      if (full == null) {
+        reply["state"] = "hung";
+        return null;
+      }
       uint dpi = 96;
       try {
         dpi = Math.Max(96u, GetDpiForWindow(hwnd));
@@ -347,7 +357,12 @@ namespace T3CodeWow {
       return canvas;
     }
 
+    /// Null for a window Windows calls hung, which it does once the window's thread has
+    /// read no message for 5 s. PrintWindow waits for that thread for as long as it takes
+    /// (measured: 8 s), and the helper can do nothing else meanwhile. In the first 5 s the
+    /// wait still happens, and the bridge's time limit on the request ends it.
     static Bitmap Print(IntPtr hwnd, RECT client) {
+      if (IsHungAppWindow(hwnd)) return null;
       Bitmap onto = Canvas(client.Right, client.Bottom);
       using (Graphics graphics = Graphics.FromImage(onto)) {
         IntPtr hdc = graphics.GetHdc();

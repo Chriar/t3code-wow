@@ -16,6 +16,7 @@ const SHOW = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_
 const CLIENT = { width: 700, height: 220 };
 const OVER_THE_CORNER = { x: -20, y: -20, width: 320, height: 140 };
 const TOOLTIP_SIZED = { x: 201, y: 22, width: 16, height: 16 };
+const HANG_MS = 8000;
 
 function showStrip(cells) {
   return spawn(POWERSHELL, ['-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', SHOW], {
@@ -100,5 +101,31 @@ test('a strip in a real window is read off the screen, and through the window wh
   } finally {
     stage.stdin.end();
     await within(5000, once(stage, 'exit'), 'the test window closes').catch(() => stage.kill());
+  }
+});
+
+test('a window that stops responding reads as hidden and gives no screenshot, and is read again once it answers', asked, async () => {
+  const stage = showStrip(encodeFrame(1, Buffer.from('hello')));
+  try {
+    await within(15000, once(readline.createInterface({ input: stage.stdout }), 'line'), 'the test window shows');
+    const capture = new StripCapture({});
+    const grabs = async (status, ms) => {
+      const end = Date.now() + ms;
+      for (;;) {
+        const res = await capture.grab(stage.pid);
+        if (res.status === status) return;
+        assert.ok(Date.now() < end, `a grab says ${status} within ${ms / 1000} s (last grab: ${res.status})`);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    };
+
+    await grabs('ok', 3000);
+    stage.stdin.write(`hang ${HANG_MS}\n`);
+    await grabs('hidden', HANG_MS);
+    await assert.rejects(capture.screenshot(stage.pid), /isn't responding/);
+    await grabs('ok', HANG_MS);
+  } finally {
+    stage.stdin.end();
+    await within(HANG_MS + 5000, once(stage, 'exit'), 'the test window closes').catch(() => stage.kill());
   }
 });

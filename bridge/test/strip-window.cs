@@ -64,6 +64,7 @@ namespace T3CodeWow {
             while ((line = input.ReadLine()) != null) {
               string[] words = line.Split(' ');
               game.BeginInvoke((MethodInvoker)delegate() {
+                if (words[0] == "hang") Thread.Sleep(int.Parse(words[1]));
                 if (words[0] == "cover") cover.Bounds = new Rectangle(game.PointToScreen(new Point(int.Parse(words[1]), int.Parse(words[2]))), new Size(int.Parse(words[3]), int.Parse(words[4])));
                 cover.Visible = words[0] == "cover";
               });

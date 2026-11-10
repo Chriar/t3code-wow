@@ -49,7 +49,7 @@ luajit tools/smoke.lua addon/T3Code /tmp/t3snap.lua "$(cat /tmp/t3snap.view)"   
 
 On macOS, Homebrew doesn't package Lua 5.1: `brew install luajit` covers the LuaJIT runs, and the `lua5.1` ones need Lua 5.1 built from source.
 
-On Windows, `npm test` skips the tests that need `lua5.1` when it isn't installed, and says so. It registers a logon task under a throwaway name for about 15 seconds and removes it again. One test draws a small window to read a strip off the real screen, so it only runs when you say where the window goes: `$env:T3WOW_SCREEN_TEST = '100,100'; npm test` in PowerShell.
+On Windows, `npm test` skips the tests that need `lua5.1` when it isn't installed, and says so. It registers a logon task under a throwaway name for about 15 seconds and removes it again. Two tests draw a small window on the real screen, one to read a strip off it and one that stops responding for 8 seconds. They only run when you say where the window goes: `$env:T3WOW_SCREEN_TEST = '100,100'; npm test` in PowerShell.
 
 `tools/wowstub.lua` stands in for the WoW API. Its widget methods come from the client's own API documentation, so calling a method that doesn't exist fails in tests the way it would in game.
 
