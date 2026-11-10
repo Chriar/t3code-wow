@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { encodeFrame, decodeImage, renderCells, cellsToBytes, bytesToCells, MAX_PAYLOAD, parsePPM, parseBMP } from '../src/codec.js';
+import { encodeFrame, decodeImage, renderCells, cellsToBytes, bytesToCells, MAX_PAYLOAD, parsePPM, parseBMP, parseQImage } from '../src/codec.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const lua = ['lua5.1', 'luajit', 'lua'].find((bin) => {
@@ -113,6 +113,35 @@ test('BMP captures decode like PPM ones', () => {
     assert.ok(back.data.equals(img.data), `pixels differ for ${JSON.stringify(opts)}`);
     assert.equal(decodeImage(back).payload.toString(), 'hello from macOS');
   }
+});
+
+// KWin's raw pixels in a QImage format, with rows padded past the image's width.
+function toQImage(img, format) {
+  const bytes = format >= 25 ? 8 : 4;
+  const stride = img.width * bytes + 12;
+  const b = Buffer.alloc(stride * img.height, 0x5a);
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      const [r, g, bl] = img.data.subarray((y * img.width + x) * 3, (y * img.width + x) * 3 + 3);
+      const o = y * stride + x * bytes;
+      if (format === 6) b.writeUInt32LE(((0xff << 24) | (r << 16) | (g << 8) | bl) >>> 0, o);
+      else if (format === 16) b.set([r, g, bl, 0xff], o);
+      else for (const [i, v] of [r, g, bl, 0xff].entries()) b.writeUInt16LE(v * 257, o + i * 2);
+    }
+  }
+  return { buf: b, meta: { width: img.width, height: img.height, stride, format } };
+}
+
+test('KWin raw captures decode like PPM ones, in its 8- and 16-bit formats', () => {
+  const cells = encodeFrame(8, 'hello from KWin');
+  const img = renderCells(cells, { cell: 4, ox: 2, oy: 1, width: 161 * 4 + 2, height: 24 });
+  for (const format of [6, 16, 26]) {
+    const { buf, meta } = toQImage(img, format);
+    const back = parseQImage(buf, meta);
+    assert.ok(back.data.equals(img.data), `pixels differ for format ${format}`);
+    assert.equal(decodeImage(back).payload.toString(), 'hello from KWin');
+  }
+  assert.throws(() => parseQImage(Buffer.alloc(64), { width: 4, height: 4, stride: 16, format: 30 }), /unsupported KWin image format 30/);
 });
 
 test('searchY finds a strip below a title bar', () => {

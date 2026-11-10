@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickMacWindow } from '../src/capture.js';
+import { pickMacWindow, pickKwinWindow } from '../src/capture.js';
 
 const screens = [
   { x: 0, y: 0, width: 1512, height: 982, scale: 2 }, // built-in Retina, the primary
@@ -24,4 +24,19 @@ test('ignores menus and tiny windows, and reports a window on another Space as h
   const w = pickMacWindow(info, 5);
   assert.deepEqual([w.found, w.visible], [true, false]);
   assert.equal(pickMacWindow({ windows: [], screens }, 5).found, false);
+});
+
+const kwin = (pid, caption, extra = {}) => ({ pid, caption, uuid: `{${pid}}`, x: 10, y: 20, width: 1280, height: 720, minimized: false, desktops: ['d1'], ...extra });
+
+test('KWin: the game by pid over a same-named window, else by caption', () => {
+  const infos = [kwin(9, 'World of Warcraft'), kwin(5, 'World of Warcraft', { x: 300 })];
+  assert.equal(pickKwinWindow(infos, 5, 'd1').x, 300);
+  assert.equal(pickKwinWindow(infos, 77, 'd1').uuid, '{9}');
+  assert.equal(pickKwinWindow([kwin(9, 'Battle.net')], 77, 'd1').found, false);
+});
+
+test('KWin: hidden when minimized or on another desktop, visible on all desktops', () => {
+  assert.equal(pickKwinWindow([kwin(5, 'World of Warcraft', { minimized: true })], 5, 'd1').visible, false);
+  assert.equal(pickKwinWindow([kwin(5, 'World of Warcraft')], 5, 'd2').visible, false);
+  assert.equal(pickKwinWindow([kwin(5, 'World of Warcraft', { desktops: [] })], 5, 'd2').visible, true);
 });

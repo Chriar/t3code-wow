@@ -89,7 +89,7 @@ function resolveWowDir(args, cfg) {
     throw new Error(`found Battle.net (${prefixes[0]}) but no World of Warcraft. Install WoW: Forever from Battle.net, launch it once, then run ./install.sh again.${where}`);
   }
   if (MAC) throw new Error(`couldn't find World of Warcraft. Install Battle.net from blizzard.com, install WoW: Forever from it and launch it once, then run ./install.sh again.${where}`);
-  throw new Error(`couldn't find Battle.net. On Omarchy, install it with omarchy-install-gaming-battlenet, install WoW: Forever from it and launch it once, then run ./install.sh again.${where}`);
+  throw new Error(`couldn't find Battle.net. On Omarchy, install it with omarchy-install-gaming-battlenet; on CachyOS, add Battle.net to Faugus Launcher or Lutris. Then install WoW: Forever from it, launch it once, and run ./install.sh again.${where}`);
 }
 
 // The bridge runs as a systemd user service on Linux and a launchd agent on macOS.
