@@ -47,6 +47,13 @@ function loadSlot(dir, i) {
   return { gen: Number(gen), nextSig: Number(nextSig), title };
 }
 
+// One value out of a slot's snapshot, read by the same Lua the game runs.
+function slotValue(dir, i, expr) {
+  const file = path.join(dir, `T3Code_S${String(i).padStart(3, '0')}`, 'Inbox.lua');
+  const out = execFileSync('lua5.1', ['-e', `dofile(${JSON.stringify(file)}) local t = T3Code_Inbox io.write(tostring(${expr}))`]);
+  return out.toString();
+}
+
 // Size of the bell file that signal k rings (0 if empty or not created yet).
 function rung(dir, k) {
   const file = path.join(dir, 'T3Code', 'Signals', String(3991 + ((k - 1) % 8)).padStart(5, '0') + '.wav');
@@ -97,6 +104,35 @@ test('parseFrame reads hello and commands', () => {
   assert.equal(f.hello.sig, 9);
   assert.equal(f.hello.view, 'tid');
   assert.deepEqual(f.commands[0], { id: 3, verb: 'send', args: ['tid', 'hi there'] });
+});
+
+test('a publish leaves out what the addon already holds, but slots 1-3 stay complete', () => {
+  const { b, dir } = fakeBridge();
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: 't1', hashes: {} };
+  b.views.set('t1', {
+    projection: { messages: [{ role: 'assistant', text: 'a long reply', createdAt: '2026-11-01T00:00:00Z' }], turnItems: [], runtimeRequests: [], runs: [] },
+    fetchedAt: Date.now(),
+  });
+  const first = b.buildSnapshot();
+  assert.ok(first.view && first.view.msgs.length === 1, 'the transcript is in the snapshot');
+  // Its next hello says it applied exactly this transcript and project list.
+  b.client.hashes = { list: first.x.l, projects: first.x.p, view: first.x.v };
+  assert.ok(b.publishNow('test'));
+  // Slots 1-3 are what a /reload boots from, so they always carry everything.
+  for (const i of [1, 2, 3]) {
+    assert.equal(slotValue(dir, i, 't.view and t.view.id or "none"'), 't1', `slot ${i} is complete`);
+  }
+  // The rotating slots leave out what the addon has, and say which parts those are.
+  assert.equal(slotValue(dir, 4, 't.view and t.view.id or "none"'), 'none', 'no second copy of the transcript');
+  assert.equal(slotValue(dir, 4, 't.projects and #t.projects or "none"'), 'none', 'no second copy of the projects');
+  assert.equal(slotValue(dir, 4, 't.same or ""'), 'pv');
+  assert.match(slotValue(dir, 4, '#t.threads'), /^\d+$/, 'the thread list always goes');
+  // A publish that starts again with an addon that holds nothing sends everything.
+  b.client.hashes = {};
+  b.publishNow('test');
+  assert.equal(slotValue(dir, 4, 't.view and t.view.id or "none"'), 't1', 'an addon that has it not is sent it');
+  assert.equal(slotValue(dir, 4, 't.same or ""'), '');
+  b.stop();
 });
 
 test('publish writes the next slots and bootstrap slots, then raises one signal', () => {
