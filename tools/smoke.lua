@@ -57,6 +57,10 @@ chunk()
 local data = T3Code_Inbox
 T3Code_Inbox = nil
 data.ack = { ui = ns.ui, seq = ns.Transport.stripSeq }
+-- The harness edits the snapshot in place, so its hashes (x) would no longer describe
+-- what it carries. Without them every snapshot counts as complete, as an older bridge's
+-- did; the test below drives the "this part is unchanged" path with its own hashes.
+data.x = nil
 data.gen = data.gen + 1
 data.nextSig = sig + 1
 ns.Transport:Apply(data)
@@ -74,6 +78,33 @@ local rows = ns.Transcript.scrollBox._rows or {}
 check(#rows > 0, "transcript rendered " .. #rows .. " elements")
 local listRows = ns.ThreadList.scrollBox._rows or {}
 check(#listRows > 0, "thread list rendered " .. #listRows .. " rows")
+
+-- A snapshot may leave out the transcript and the project list when the bridge knows,
+-- from the hello, that this addon already has them. It names them in `same`.
+do
+	local view = ns.Store.data.view
+	local projects = ns.Store.data.projects
+	data.gen = data.gen + 1
+	ns.Transport:Apply({
+		gen = data.gen, x = { l = "L1", p = "P1", v = "V1" },
+		threads = ns.Store.data.threads, projects = projects, view = view,
+		bridge = ns.Store.data.bridge, usage = ns.Store.data.usage,
+		ack = { ui = ns.ui, seq = ns.Transport.stripSeq },
+	})
+	check(ns.Store.listKey == "L1" and ns.Store.projectsKey == "P1" and ns.Store.viewKey == "V1", "the addon records what it applied")
+	rows = ns.Transcript.scrollBox._rows or {}
+	data.gen = data.gen + 1
+	ns.Transport:Apply({
+		gen = data.gen, same = "pv", x = { l = "L2", p = "P2", v = "V2" },
+		threads = ns.Store.data.threads, bridge = ns.Store.data.bridge, usage = ns.Store.data.usage,
+		ack = { ui = ns.ui, seq = ns.Transport.stripSeq },
+	})
+	check(ns.Store.data.view == view, "an omitted transcript is kept")
+	check(ns.Store.data.projects == projects, "an omitted project list is kept")
+	check(ns.Store.listKey == "L2" and ns.Store.projectsKey == "P1" and ns.Store.viewKey == "V1", "it only claims the parts it was sent")
+	check(ns.Transport:Payload():find("\031L2\031P1\031V1", 1, true) ~= nil, "the hello reports what it holds")
+	check(#(ns.Transcript.scrollBox._rows or {}) == #rows, "the transcript isn't rebuilt for an unchanged one")
+end
 
 -- Send a message: queued, echoed, and present in the strip payload.
 ns.Main.composer._text = "Please run the tests"
@@ -577,7 +608,7 @@ do
 	check(not L.chordText:find("RT", 1, true), "no hard-coded Xbox names")
 	local w = L.watcher
 	check(w._scripts.OnGamePadButtonDown == nil and not w._gamepadEnabled, "the watcher never takes controller input")
-	local function frame() w._scripts.OnUpdate(w, 0.016) end
+	local function frame() Stub.now = Stub.now + 0.06 w._scripts.OnUpdate(w, 0.06) end
 	local wasOpen = ns.windowOpen
 	WOWSTUB.padHeld = { PADLTRIGGER = true, PADRTRIGGER = true }
 	frame()
