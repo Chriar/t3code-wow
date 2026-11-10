@@ -68,6 +68,7 @@ export const LONG_SILENT_WAV = (() => {
 const RETRY_MS = process.platform === 'win32' ? [10, 10] : [];
 const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
+export const sleepSync = (ms) => void Atomics.wait(sleeper, 0, 0, ms);
 
 // Another program kept a file open past the retries. Nothing is half-written when
 // this is thrown. Only Windows can throw it.
@@ -83,7 +84,7 @@ export class FileInUse extends Error {
 export function replaceFile(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
   for (const wait of [0, ...RETRY_MS]) {
-    if (wait) Atomics.wait(sleeper, 0, 0, wait);
+    if (wait) sleepSync(wait);
     try {
       fs.writeFileSync(tmp, content);
       fs.renameSync(tmp, file);

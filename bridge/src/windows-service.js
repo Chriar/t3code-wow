@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { replaceFile } from './slots.js';
+import { replaceFile, sleepSync } from './slots.js';
 import { POWERSHELL, whatPowerShellSaid } from './windows.js';
 
 const TASK = 't3code-wow';
@@ -35,9 +35,6 @@ const BRIDGE_STOP_MS = 3000;
 const STOP_GRACE_MS = 8000;
 const POLL_MS = 100;
 const RECORD_WITHIN_MS = 1000;
-
-const sleeper = new Int32Array(new SharedArrayBuffer(4));
-const sleep = (ms) => void Atomics.wait(sleeper, 0, 0, ms);
 
 function exists(pid) {
   try {
@@ -244,7 +241,7 @@ function waitForStop(file, graceMs, system = windows) {
     const left = stillRunning(file, system);
     const pids = Object.values(left).filter(Boolean).map((run) => run.pid);
     if (!pids.length || Date.now() >= end) return left;
-    while (pids.some((pid) => system.exists(pid)) && Date.now() < end) sleep(POLL_MS);
+    while (pids.some((pid) => system.exists(pid)) && Date.now() < end) sleepSync(POLL_MS);
   }
 }
 
