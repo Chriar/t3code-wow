@@ -31,11 +31,22 @@ export function threadStatus(t) {
   if (t.archivedAt || t.deletedAt) return 'archived';
   if (t.pendingRuntimeRequest) return 'input';
   if (t.activityRunStatus || WORKING.has(t.status)) return 'working';
+  // Between runs but still waiting on something (a watched PR, another thread): T3
+  // lists these as "Waiting" under Working.
+  if (waitingOn(t)) return 'waiting';
   // Settled wins over an unreviewed plan: settling is how you say you're done with it.
   if (t.settledOverride === 'settled') return 'settled';
   if (t.hasActionableProposedPlan) return 'plan';
   if (t.status === 'failed' || t.lastError) return 'failed';
   return 'open';
+}
+
+// What an idle-but-waiting thread is waiting for, or null.
+export function waitingOn(t) {
+  if (t.activityRunStatus || WORKING.has(t.status)) return null;
+  const task = (t.pendingBackgroundTasks || []).find((b) => b?.awaited);
+  if (task) return task.description || 'Waiting';
+  return t.blockedOnThreadWait ? 'Waiting on another thread' : null;
 }
 
 export function isUnread(t) {

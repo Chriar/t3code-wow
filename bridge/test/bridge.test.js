@@ -430,3 +430,41 @@ test('a settled thread shows as settled even with an unreviewed plan', async () 
   assert.equal(threadStatus({ ...t, settledOverride: null }), 'plan');
   assert.equal(threadStatus({ ...t, pendingRuntimeRequest: { kind: 'user_input' } }), 'input');
 });
+
+test('a thread waiting on a watched PR or another thread is waiting, not open', async () => {
+  const { threadStatus, waitingOn } = await import('../src/t3.js');
+  const watch = { taskId: 'pull-request-watch:x#1', description: 'Watching pull request #1', awaited: true, kind: 'monitor' };
+  const t = { status: 'completed', pendingBackgroundTasks: [watch] };
+  assert.equal(threadStatus(t), 'waiting');
+  assert.equal(waitingOn(t), 'Watching pull request #1');
+  assert.equal(threadStatus({ ...t, pendingBackgroundTasks: [{ ...watch, awaited: false }] }), 'open');
+  assert.equal(threadStatus({ status: 'completed', blockedOnThreadWait: true }), 'waiting');
+  assert.equal(threadStatus({ ...t, status: 'running', activityRunStatus: 'running' }), 'working', 'running wins');
+  assert.equal(threadStatus({ ...t, pendingRuntimeRequest: { kind: 'approval' } }), 'input', 'needing the player wins');
+  assert.equal(waitingOn({ ...t, status: 'running', activityRunStatus: 'running' }), null);
+});
+
+test('a waiting thread is listed with what it waits for, timed from the end of its last run', () => {
+  const { b } = fakeBridge();
+  b.t3.threads.set('pr-watch', { id: 'pr-watch', title: 'Watch', projectId: 'p1', status: 'completed', updatedAt: new Date().toISOString(),
+    latestRunStartedAt: '2026-01-01T00:00:00Z', latestRunCompletedAt: '2026-01-01T00:05:00Z',
+    pendingBackgroundTasks: [{ taskId: 'w', description: 'Watching pull request #7', awaited: true, kind: 'monitor' }] });
+  const t = b.buildSnapshot().threads.find((x) => x.id === 'pr-watch');
+  assert.equal(t?.s, 'waiting');
+  assert.equal(t?.l, 'Watching pull request #7');
+  assert.equal(t?.st, Date.parse('2026-01-01T00:05:00Z') / 1000, 'waiting counts from the end of the last run');
+});
+
+test('ending a turn into waiting is not announced; the wait ending is', async () => {
+  const { b } = fakeBridge();
+  const said = [];
+  b.announce = (t, status) => said.push(status);
+  const base = { id: 'w', title: 'W', projectId: 'p1', updatedAt: new Date().toISOString() };
+  const running = { ...base, status: 'running', activityRunStatus: 'running' };
+  const waiting = { ...base, status: 'completed', pendingBackgroundTasks: [{ taskId: 'x', description: 'Watching pull request #7', awaited: true }] };
+  const done = { ...base, status: 'completed' };
+  b.onT3Change({ kind: 'thread', prev: running, thread: waiting });
+  assert.deepEqual(said, []);
+  b.onT3Change({ kind: 'thread', prev: waiting, thread: done });
+  assert.deepEqual(said, ['open']);
+});

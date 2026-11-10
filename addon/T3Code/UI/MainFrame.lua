@@ -671,7 +671,7 @@ function M:Refresh()
 		if t then
 			f.Subtitle:SetText(t.title)
 			local status = ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s))
-			local age = (t.s == "working" and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
+			local age = ((t.s == "working" or t.s == "waiting") and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
 			header.Text:SetText(string.format("%s  ·  %s  ·  %s", status, ns.Store:ProjectName(t.p), age))
 			header.Action:SetShown(true)
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")

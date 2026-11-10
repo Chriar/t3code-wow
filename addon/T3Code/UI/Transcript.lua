@@ -387,7 +387,7 @@ function T:Elements()
 	end
 	if t and t.s == "working" then
 		table.insert(list, Note(ns.Color("agent", v.act or t.l or "Working"), "common-icon-undo", { spin = true, since = t.st, live = true }))
-	elseif t and (t.s == "open" or t.s == "failed") and ns.db.settings.quickReplies and not p then
+	elseif t and (t.s == "open" or t.s == "failed" or t.s == "waiting") and ns.db.settings.quickReplies and not p then
 		for _, text in ipairs(QUICK_REPLIES) do
 			table.insert(list, Option(text:gsub("%.$", ""), function() ns.Main:Send(text) end))
 		end

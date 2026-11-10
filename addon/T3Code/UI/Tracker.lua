@@ -220,6 +220,9 @@ function K:Refresh(resetPosition)
 			if t.s == "working" then
 				sub = string.format("- %s (%s)", t.l or "Working", ns.Duration(time() - (t.st or time())))
 				b.Dot:SetVertexColor(0.29, 0.62, 1)
+			elseif t.s == "waiting" then
+				sub = string.format("- %s (%s)", ns.Color("grey", t.l or "Waiting"), ns.Duration(time() - (t.st or time())))
+				b.Dot:SetVertexColor(0.55, 0.6, 0.7)
 			elseif t.s == "input" or t.s == "plan" then
 				sub = "- " .. ns.Color("orange", t.l or "Needs you")
 				b.Dot:SetVertexColor(1, 0.6, 0.2)
