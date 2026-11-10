@@ -57,14 +57,16 @@ namespace T3CodeWow {
       cover.BackColor = Color.SlateGray;
 
       game.Shown += delegate(object sender, EventArgs e) {
-        cover.Bounds = new Rectangle(game.PointToScreen(new Point(-20, -20)), new Size(320, 140));
         Thread commands = new Thread(delegate() {
           TextReader input = new StreamReader(Console.OpenStandardInput());
           string line;
           try {
             while ((line = input.ReadLine()) != null) {
-              bool covered = line == "cover";
-              game.BeginInvoke((MethodInvoker)delegate() { cover.Visible = covered; });
+              string[] words = line.Split(' ');
+              game.BeginInvoke((MethodInvoker)delegate() {
+                if (words[0] == "cover") cover.Bounds = new Rectangle(game.PointToScreen(new Point(int.Parse(words[1]), int.Parse(words[2]))), new Size(int.Parse(words[3]), int.Parse(words[4])));
+                cover.Visible = words[0] == "cover";
+              });
             }
             game.BeginInvoke((MethodInvoker)delegate() { game.Close(); });
           } catch (InvalidOperationException) {

@@ -219,10 +219,13 @@ Windows support is new. This section says how the bridge runs in the background 
 
 **One bridge at a time.** Two bridges would both read the same strip frame and run the same command, so a message could reach the agent twice. The supervisor records itself and its bridge in `running.json` in the state folder, each as a pid and a start time, because Windows gives a pid to another program once its process is gone. A new supervisor doesn't start while a recorded one is running. Install, restart and uninstall wait for the recorded supervisor and bridge to be gone before they start or delete anything, and end them after 8 seconds if they're still there.
 
+**What hides the strip.** A screen copy reads whatever is on screen. So before each copy the helper asks Windows which window is at 279 points over the strip: one every 16 pixels, and along the strip's far edges. If the window at any point isn't the game, the helper reads the game through `PrintWindow` instead. That catches every window at least 16 pixels wide and high over any part of the strip. A smaller window can sit between the points and hide part of the strip. An overlay that another program draws over the game's top-left corner, such as a frame-rate counter, also hides the strip while it's there, as on the other platforms. Windows doesn't report a click-through overlay as the window at a point, so the helper doesn't see one as covering.
+
 **Measured** on one PC (Windows 11, Node.js 26, T3 Code Nightly 0.1.8, a 3840x2160 HDR display):
 
 - Reading the corner of the game window, 2992x1683, with HDR on: a screen copy took 17 ms and `PrintWindow` 45 ms, both with correct colours. `PrintWindow` renders the whole window, so its cost grows with the window. That is why the screen copy is the normal path.
 - A strip drawn in a test window decoded through both paths. `T3WOW_SCREEN_TEST` runs that check (see CONTRIBUTING.md).
+- Asking which window is at the 279 points took 0.46 ms for each grab. A 16x16 window was seen at every place tried over the strip. A 15x15 window between the points wasn't seen. With a click-through overlay over the whole corner, the helper copied the screen and the strip wasn't found.
 - Renaming over a file another program has open failed in every sharing mode that program could ask for.
 - After the task was stopped, conhost was gone about 1 second later, and the Node processes under it kept running until they noticed. A Node program's own children ended the moment it exited.
 - With a stand-in bridge under the real task, a restart left 0.3 to 0.8 seconds between the old bridge stopping and the new one starting. With the waiting taken out, the two ran together for 1.5 seconds.

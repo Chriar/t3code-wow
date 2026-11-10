@@ -14,6 +14,8 @@ const asked = { skip: !at && 'it draws a window: on Windows, set T3WOW_SCREEN_TE
 const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const SHOW = "$ErrorActionPreference = 'Stop'; Add-Type -LiteralPath $env:T3WOW_STRIP_SRC -ReferencedAssemblies System.Windows.Forms,System.Drawing; [T3CodeWow.StripWindow]::Run()";
 const CLIENT = { width: 700, height: 220 };
+const OVER_THE_CORNER = { x: -20, y: -20, width: 320, height: 140 };
+const TOOLTIP_SIZED = { x: 201, y: 22, width: 16, height: 16 };
 
 function showStrip(cells) {
   return spawn(POWERSHELL, ['-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', SHOW], {
@@ -44,7 +46,7 @@ function jpegSize(data) {
   return null;
 }
 
-test('a strip in a real window is read off the screen, and through the window while another covers it', asked, async (t) => {
+test('a strip in a real window is read off the screen, and through the window while another covers it, even a 16x16 one', asked, async (t) => {
   const payload = Buffer.from('a real frame from encodeFrame, long enough to fill several rows of cells. '.repeat(8));
   const stage = showStrip(encodeFrame(4242, payload));
   try {
@@ -67,6 +69,7 @@ test('a strip in a real window is read off the screen, and through the window wh
         await new Promise((r) => setTimeout(r, 50));
       }
     };
+    const cover = ({ x, y, width, height }) => stage.stdin.write(`cover ${x} ${y} ${width} ${height}\n`);
     const timed = async (via) => {
       const started = performance.now();
       for (let i = 0; i < 20; i++) assert.equal((await capture.grab(stage.pid)).via, via);
@@ -79,7 +82,7 @@ test('a strip in a real window is read off the screen, and through the window wh
     await read('screen');
     await timed('screen');
 
-    stage.stdin.write('cover\n');
+    cover(OVER_THE_CORNER);
     await read('window');
     await timed('window');
 
@@ -91,6 +94,9 @@ test('a strip in a real window is read off the screen, and through the window wh
 
     stage.stdin.write('uncover\n');
     await read('screen');
+
+    cover(TOOLTIP_SIZED);
+    await read('window');
   } finally {
     stage.stdin.end();
     await within(5000, once(stage, 'exit'), 'the test window closes').catch(() => stage.kill());

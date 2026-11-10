@@ -82,6 +82,9 @@ namespace T3CodeWow {
     const uint GA_ROOT = 2;
     const uint PW_CLIENTONLY = 1, PW_RENDERFULLCONTENT = 2;
     const int DWMWA_CLOAKED = 14;
+    // The strip as the addon draws it, from the top-left of the client area.
+    const int CELL = 3, CELLS_PER_ROW = 160, MAX_ROWS = 40;
+    const int COVER_STEP = 16;
 
     delegate byte[] Operation(Dictionary<string, object> request, Dictionary<string, object> reply);
 
@@ -314,16 +317,24 @@ namespace T3CodeWow {
       return "ok";
     }
 
+    /// Looks at one point every COVER_STEP pixels across the strip and along its far
+    /// edges. That sees every window at least COVER_STEP pixels wide and high that is over
+    /// any part of the strip. A smaller one can sit between the points. Each point costs
+    /// 1.7 us (measured), so the 279 here cost 0.5 ms a grab.
+    ///
     /// A point off every monitor has no window, so a corner dragged off screen counts as
     /// covered. WindowFromPoint skips click-through overlays.
     static bool Uncovered(IntPtr hwnd, POINT origin, int w, int h) {
-      for (int across = 0; across <= 4; across++) {
-        for (int down = 0; down <= 2; down++) {
+      int right = Math.Min(w, CELLS_PER_ROW * CELL) - 1, bottom = Math.Min(h, MAX_ROWS * CELL) - 1;
+      for (int x = 0; ; x = Math.Min(x + COVER_STEP, right)) {
+        for (int y = 0; ; y = Math.Min(y + COVER_STEP, bottom)) {
           POINT point;
-          point.X = origin.X + (w - 1) * across / 4;
-          point.Y = origin.Y + (h - 1) * down / 2;
+          point.X = origin.X + x;
+          point.Y = origin.Y + y;
           if (GetAncestor(WindowFromPoint(point), GA_ROOT) != hwnd) return false;
+          if (y == bottom) break;
         }
+        if (x == right) break;
       }
       return true;
     }
