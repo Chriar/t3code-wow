@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { snoozedUntil } from './snooze.js';
 
 export const PROTOCOL = 2;
 
@@ -27,13 +28,16 @@ export function readRuntime() {
 const WORKING = new Set(['preparing', 'queued', 'starting', 'running', 'waiting']);
 
 // Collapse the server's thread fields into the handful the game needs.
-export function threadStatus(t) {
+export function threadStatus(t, now = Date.now()) {
   if (t.archivedAt || t.deletedAt) return 'archived';
   if (t.pendingRuntimeRequest) return 'input';
   if (t.activityRunStatus || WORKING.has(t.status)) return 'working';
   // Between runs but still waiting on something (a watched PR, another thread): T3
   // lists these as "Waiting" under Working.
   if (waitingOn(t)) return 'waiting';
+  // Snoozed until a time still ahead: out of the way until then. A thread that needs
+  // an answer or is running shows regardless.
+  if (snoozedUntil(t, now)) return 'snoozed';
   // Settled wins over an unreviewed plan: settling is how you say you're done with it.
   if (t.settledOverride === 'settled') return 'settled';
   if (t.hasActionableProposedPlan) return 'plan';
@@ -509,6 +513,14 @@ export class T3Client extends EventEmitter {
 
   unsettle(threadId) {
     return this.dispatch({ type: 'thread.unsettle', threadId, reason: 'user' });
+  }
+
+  snooze(threadId, until) {
+    return this.dispatch({ type: 'thread.snooze', threadId, snoozedUntil: new Date(until).toISOString() });
+  }
+
+  unsnooze(threadId) {
+    return this.dispatch({ type: 'thread.unsnooze', threadId, reason: 'user' });
   }
 
   archive(threadId) {

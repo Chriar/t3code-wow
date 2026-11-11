@@ -192,6 +192,16 @@ export class Fleet extends EventEmitter {
     return env.client.unsettle(id);
   }
 
+  snooze(key, until) {
+    const { env, id } = this.split(key);
+    return env.client.snooze(id, until);
+  }
+
+  unsnooze(key) {
+    const { env, id } = this.split(key);
+    return env.client.unsnooze(id);
+  }
+
   archive(key) {
     const { env, id } = this.split(key);
     return env.client.archive(id);
