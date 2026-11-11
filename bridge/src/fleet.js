@@ -139,7 +139,7 @@ export class Fleet extends EventEmitter {
       local: e.local || undefined,
       state: e.client.state,
       error: e.client.error || undefined,
-      threads: e.client.threads.size,
+      threads: [...e.client.threads.values()].filter((t) => !t.lineage?.parentThreadId).length,
     }));
   }
 

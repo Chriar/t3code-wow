@@ -22,6 +22,7 @@ test('without defaults, the latest thread in the project, then anywhere', () => 
     { projectId: 'p', createdAt: '2026-11-05T00:00:00Z', modelSelection: sel('claude', 'new-here') },
     { projectId: 'q', createdAt: '2026-11-08T00:00:00Z', modelSelection: sel('codex', 'elsewhere') },
     { projectId: 'p', createdAt: '2026-11-09T00:00:00Z', modelSelection: sel('codex', 'deleted'), deletedAt: '2026-11-09T01:00:00Z' },
+    { projectId: 'p', createdAt: '2026-11-10T00:00:00Z', modelSelection: sel('codex', 'subagent'), lineage: { parentThreadId: 'x' } },
   ];
   const settings = { defaultModelSelection: null, fallbackModelSelection: null };
   assert.equal(pickModelSelection({ project: { id: 'p' }, settings, threads, providers }).model, 'new-here');

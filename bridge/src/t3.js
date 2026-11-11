@@ -64,8 +64,9 @@ export function pickModelSelection({ project, settings = {}, threads = [], provi
   for (const sel of [project?.defaultModelSelection, settings.defaultModelSelection, settings.fallbackModelSelection]) {
     if (enabled(sel)) return sel;
   }
+  // Subagent threads run on whatever model their parent delegated to: not a choice.
   const latest = threads
-    .filter((t) => !t.deletedAt && enabled(t.modelSelection))
+    .filter((t) => !t.deletedAt && !t.lineage?.parentThreadId && enabled(t.modelSelection))
     .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
   return (latest.find((t) => project && t.projectId === project.id) || latest[0])?.modelSelection || null;
 }
@@ -142,7 +143,7 @@ export function chosenModelSelection({ instanceId, model }, { providers, candida
     // the level this carries over.
     const active = (t) => Date.parse(t.activityRunStartedAt || t.latestRunStartedAt || t.updatedAt || t.createdAt || 0);
     const latest = threads
-      .filter((t) => !t.deletedAt && same(t.modelSelection))
+      .filter((t) => !t.deletedAt && !t.lineage?.parentThreadId && same(t.modelSelection))
       .sort((a, b) => active(b) - active(a))[0];
     options = latest?.modelSelection.options;
   }
