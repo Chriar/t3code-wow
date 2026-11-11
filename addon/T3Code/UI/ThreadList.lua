@@ -16,6 +16,7 @@ local GROUPS = {
 
 local DOT_COLORS = {
 	working = { 0.29, 0.62, 1 },
+	waiting = { 0.55, 0.6, 0.7 },
 	input = { 1, 0.6, 0.2 },
 	plan = { 1, 0.6, 0.2 },
 	failed = { 1, 0.25, 0.25 },
@@ -117,9 +118,9 @@ local function InitRow(button, ed)
 	if color then button.Dot:SetVertexColor(color[1], color[2], color[3]) end
 	button.Status:SetText(ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s)))
 	local sub = ns.Store:ProjectName(t.p)
-	if t.s == "working" or t.s == "input" then sub = t.l or sub end
+	if t.s == "working" or t.s == "input" or t.s == "waiting" then sub = t.l or sub end
 	button.Sub:SetText(sub)
-	if t.s == "working" and t.st then
+	if (t.s == "working" or t.s == "waiting") and t.st then
 		button.Age:SetText(ns.Duration(time() - t.st))
 	else
 		button.Age:SetText(ns.Ago(t.u))

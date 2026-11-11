@@ -627,7 +627,7 @@ end
 -- The open thread's header line: status, project, and how long it has been running
 -- or how long ago it finished.
 function M:HeaderText(t)
-	local age = (t.s == "working" and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
+	local age = ((t.s == "working" or t.s == "waiting") and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
 	return string.format("%s  ·  %s  ·  %s",
 		ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s)), ns.Store:ProjectName(t.p), age)
 end
@@ -998,7 +998,7 @@ C_Timer.NewTicker(1, ns.Safe(function()
 	end
 	if M.page ~= "threads" then return end
 	for _, t in ipairs(ns.Store.data.threads) do
-		if t.s == "working" then
+		if t.s == "working" or t.s == "waiting" then
 			M:RefreshTimers()
 			return
 		end

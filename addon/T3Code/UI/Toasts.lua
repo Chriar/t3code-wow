@@ -126,7 +126,8 @@ local function Notify(t, kind, quietSound)
 end
 
 ns:On("ThreadTransition", function(t, before, after)
-	local finished = before == "working" and (after == "open" or after == "failed")
+	-- Waiting (on a watched PR, another thread) isn't done yet: tell the player when the wait ends.
+	local finished = (before == "working" or before == "waiting") and (after == "open" or after == "failed")
 	local needsYou = (after == "input" or after == "plan") and before ~= after
 	if not finished and not needsYou then return end
 	local kind = after

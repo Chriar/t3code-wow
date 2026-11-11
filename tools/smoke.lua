@@ -761,6 +761,20 @@ do
 	check(mb._shown == false, "minimap button can be hidden")
 	ns.db.settings.minimapButton = true
 	ns.MinimapButton:Refresh()
+	-- Waiting on a watched PR isn't "needs you": no badge for it, but there is for input.
+	local saved = ns.Store.data.threads
+	ns.Store.data.threads = { { id = "w1", title = "Waiting", s = "waiting", l = "Watching pull request #7", st = time() - 60, p = "p" } }
+	ns.MinimapButton:Refresh()
+	check(not mb.Badge:IsShown(), "a waiting thread doesn't badge the minimap button")
+	mb._scripts.OnEnter(mb)
+	ns.Tracker:Refresh()
+	check(ns.Store.GROUP_OF.waiting == "working", "waiting threads are listed under Working")
+	ns.Store.data.threads[2] = { id = "i1", title = "Input", s = "input", l = "Needs your approval", p = "p" }
+	ns.MinimapButton:Refresh()
+	check(mb.Badge:IsShown(), "a thread that needs the player badges the minimap button")
+	ns.Store.data.threads = saved
+	ns.MinimapButton:Refresh()
+	ns.Tracker:Refresh()
 end
 
 -- Exhaustion

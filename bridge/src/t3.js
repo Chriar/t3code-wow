@@ -31,11 +31,22 @@ export function threadStatus(t) {
   if (t.archivedAt || t.deletedAt) return 'archived';
   if (t.pendingRuntimeRequest) return 'input';
   if (t.activityRunStatus || WORKING.has(t.status)) return 'working';
+  // Between runs but still waiting on something (a watched PR, another thread): T3
+  // lists these as "Waiting" under Working.
+  if (waitingOn(t)) return 'waiting';
   // Settled wins over an unreviewed plan: settling is how you say you're done with it.
   if (t.settledOverride === 'settled') return 'settled';
   if (t.hasActionableProposedPlan) return 'plan';
   if (t.status === 'failed' || t.lastError) return 'failed';
   return 'open';
+}
+
+// What an idle-but-waiting thread is waiting for, or null.
+export function waitingOn(t) {
+  if (t.activityRunStatus || WORKING.has(t.status)) return null;
+  const task = (t.pendingBackgroundTasks || []).find((b) => b?.awaited);
+  if (task) return task.description || 'Waiting';
+  return t.blockedOnThreadWait ? 'Waiting on another thread' : null;
 }
 
 export function isUnread(t) {
@@ -328,7 +339,7 @@ export class T3Client extends EventEmitter {
       // Follow-up snapshot frames can carry only projects (threads: []): keep threads.
       if (Array.isArray(snap.threads) && snap.threads.length > 0) {
         this.threads.clear();
-        for (const t of snap.threads) if (!t.lineage?.parentThreadId) this.threads.set(t.id, t);
+        for (const t of snap.threads) this.threads.set(t.id, t);
       }
       if (Array.isArray(snap.projects)) for (const p of snap.projects) this.projects.set(p.id, p);
       if (typeof snap.olderSettled === 'number') this.olderSettled = snap.olderSettled;
@@ -338,7 +349,7 @@ export class T3Client extends EventEmitter {
       this.emit('change', { kind: 'snapshot' });
     } else if (item.kind === 'thread.updated') {
       const t = item.thread;
-      if (!t || t.lineage?.parentThreadId) return;
+      if (!t) return;
       const prev = this.threads.get(t.id);
       this.threads.set(t.id, t);
       if (!prev || prev.updatedAt !== t.updatedAt || threadStatus(prev) !== threadStatus(t)) {

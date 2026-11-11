@@ -20,7 +20,7 @@ local Store = {
 ns.Store = Store
 
 local GROUP_OF = {
-	working = "working", input = "working", plan = "working",
+	working = "working", input = "working", plan = "working", waiting = "working",
 	open = "open", failed = "open",
 	settled = "settled",
 }
@@ -131,7 +131,7 @@ end
 function Store:Active()
 	local list = {}
 	for _, t in ipairs(self.data.threads) do
-		if t.s == "working" or t.s == "input" or t.s == "plan" then table.insert(list, t) end
+		if t.s == "working" or t.s == "input" or t.s == "plan" or t.s == "waiting" then table.insert(list, t) end
 	end
 	return list
 end
@@ -267,11 +267,11 @@ end
 -- Status words and colors
 
 local STATUS_TEXT = {
-	working = "Working", input = "Waiting", plan = "Plan ready",
+	working = "Working", input = "Needs you", plan = "Plan ready", waiting = "Waiting",
 	open = "Finished", failed = "Failed", settled = "Settled",
 }
 local STATUS_COLOR = {
-	working = "blue", input = "orange", plan = "orange",
+	working = "blue", input = "orange", plan = "orange", waiting = "grey",
 	open = "white", failed = "red", settled = "grey",
 }
 

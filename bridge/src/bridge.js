@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { RS, US } from './codec.js';
 import { StripCapture } from './capture.js';
 import { SlotBank, replaceFile, FileInUse } from './slots.js';
-import { threadStatus, isUnread, effortOf } from './t3.js';
+import { threadStatus, isUnread, effortOf, waitingOn } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
 import { Voice } from './voice.js';
@@ -35,7 +35,9 @@ const sec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) : undefined);
 const fingerprint = (value) => createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 16);
 
 const ACTIVE = new Set(['working', 'input', 'plan']);
-const ORDER = { input: 0, plan: 1, working: 2, failed: 3, open: 4, settled: 5 };
+const ORDER = { input: 0, plan: 1, working: 2, waiting: 3, failed: 4, open: 5, settled: 6 };
+// Busy, from the player's point of view: the agent isn't done with the thread yet.
+const BUSY = new Set(['working', 'waiting']);
 
 export function activityLabel(projection) {
   if (!projection) return null;
@@ -710,7 +712,8 @@ export class Bridge {
       else if (ACTIVE.has(status)) this.refreshView(t.id);
       if (before !== status) {
         this.markDirty('important');
-        if (before === 'working' && status !== 'working') this.announce(t, status);
+        if (t.lineage?.parentThreadId) return; // no announcements for subagent threads
+        if (BUSY.has(before) && !BUSY.has(status)) this.announce(t, status);
         else if (status === 'input' && before !== 'input') this.announce(t, status);
       } else {
         this.markDirty('minor');
@@ -762,7 +765,8 @@ export class Bridge {
     const usedProjects = new Set();
     let threads = [...t3.threads.values()]
       .map((t) => ({ t, s: threadStatus(t) }))
-      .filter(({ s }) => s !== 'archived');
+      // Subagent threads only while they're busy, like T3's own sidebar.
+      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s)));
     threads.sort((a, b) => ORDER[a.s] - ORDER[b.s] || Date.parse(b.t.updatedAt) - Date.parse(a.t.updatedAt));
     let settled = 0;
     threads = threads.filter(({ s }) => s !== 'settled' || ++settled <= 30).slice(0, 90);
@@ -773,6 +777,7 @@ export class Bridge {
       let label;
       if (s === 'working') label = activityLabel(proj) || (t.status === 'queued' ? 'Queued' : 'Working');
       else if (s === 'input') label = t.pendingRuntimeRequest?.kind === 'user_input' ? 'Needs your answer' : 'Needs your approval';
+      else if (s === 'waiting') label = waitingOn(t);
       else if (s === 'plan') label = 'Plan ready';
       else if (s === 'failed') label = t.lastError ? `Failed: ${String(t.lastError).slice(0, 60)}` : 'Failed';
       else if (s === 'settled') label = 'Settled';
@@ -787,7 +792,8 @@ export class Bridge {
         // A working thread's update time changes with every tool call but isn't shown
         // (the game shows elapsed time), so leave it out to avoid pointless publishes.
         u: s === 'working' ? undefined : sec(t.updatedAt),
-        st: sec(t.activityRunStartedAt || t.latestRunStartedAt),
+        // Waiting counts from when the last run ended, as in T3's sidebar.
+        st: s === 'waiting' ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
         un: s !== 'settled' && isUnread(t) ? true : undefined,
         br: t.branch ? escapeWow(t.branch) : undefined,
         m: t.modelSelection?.model,

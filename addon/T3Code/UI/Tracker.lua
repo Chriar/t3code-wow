@@ -61,6 +61,8 @@ end
 local function SubText(t)
 	if t.s == "working" then
 		return string.format("- %s (%s)", t.l or "Working", ns.Duration(time() - (t.st or time()))), 0.29, 0.62, 1
+	elseif t.s == "waiting" then
+		return string.format("- %s (%s)", ns.Color("grey", t.l or "Waiting"), ns.Duration(time() - (t.st or time()))), 0.55, 0.6, 0.7
 	elseif t.s == "input" or t.s == "plan" then
 		return "- " .. ns.Color("orange", t.l or "Needs you"), 1, 0.6, 0.2
 	elseif t.s == "failed" then

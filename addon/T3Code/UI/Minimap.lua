@@ -99,13 +99,16 @@ end
 
 function B:Tooltip(tip)
 	tip:SetText("T3 Code", 1, 0.82, 0)
-	local working, waiting = 0, 0
+	local working, needsYou, waiting = 0, 0, 0
 	for _, t in ipairs(ns.Store:Active()) do
-		if t.s == "working" then working = working + 1 else waiting = waiting + 1 end
+		if t.s == "working" then working = working + 1
+		elseif t.s == "waiting" then waiting = waiting + 1
+		else needsYou = needsYou + 1 end
 	end
-	if waiting > 0 then tip:AddLine(waiting .. (waiting == 1 and " thread needs you" or " threads need you"), 1, 0.6, 0.2) end
+	if needsYou > 0 then tip:AddLine(needsYou .. (needsYou == 1 and " thread needs you" or " threads need you"), 1, 0.6, 0.2) end
 	if working > 0 then tip:AddLine(working .. " working", 0.4, 0.7, 1) end
-	if working + waiting == 0 then tip:AddLine("Nothing running", 1, 1, 1) end
+	if waiting > 0 then tip:AddLine(waiting .. " waiting", 0.6, 0.6, 0.6) end
+	if working + needsYou + waiting == 0 then tip:AddLine("Nothing running", 1, 1, 1) end
 	local state = ns.Transport:BridgeState()
 	if state ~= "connected" then tip:AddLine("Bridge: " .. state, 0.6, 0.6, 0.6) end
 	tip:AddLine("Click to open · Right-click for settings · Drag to move", 0.6, 0.6, 0.6)
@@ -116,11 +119,11 @@ function B:Refresh()
 	local b = self.button
 	if not b then return end
 	b:SetShown(ns.db.settings.minimapButton ~= false)
-	local waiting = false
+	local needsYou = false
 	for _, t in ipairs(ns.Store:Active()) do
-		if t.s ~= "working" then waiting = true break end
+		if t.s == "input" or t.s == "plan" then needsYou = true break end
 	end
-	b.Badge:SetShown(waiting)
+	b.Badge:SetShown(needsYou)
 	b.Icon:SetDesaturated(ns.Transport:BridgeState() ~= "connected")
 end
 
