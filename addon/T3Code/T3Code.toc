@@ -28,5 +28,6 @@ UI\Settings.lua
 UI\Tracker.lua
 UI\Toasts.lua
 UI\Minimap.lua
+UI\AddonList.lua
 UI\Gamepad.lua
 Core\Slash.lua

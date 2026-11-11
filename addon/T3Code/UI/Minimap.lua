@@ -130,35 +130,3 @@ end
 ns:On("Login", function() B:Create() end)
 ns:On("DataChanged", function() B:Refresh() end)
 ns:On("LinkChanged", function() B:Refresh() end)
-
-
--- Filter transport-only addons from the menu's data, never from C_AddOns itself.
--- Hook the provider assignment so later list rebuilds by other addons are covered.
-do
-	local function HideTransportSlots(provider)
-		if not provider or not provider.EnumerateEntireRange or not provider.Remove then return end
-		local remove = {}
-		for _, node in provider:EnumerateEntireRange() do
-			local data = node.GetData and node:GetData() or node
-			local name = data.addonIndex and C_AddOns.GetAddOnInfo(data.addonIndex)
-			if name and name:match("^T3Code_S%d+$") then
-				remove[#remove + 1] = node
-			end
-		end
-		for _, node in ipairs(remove) do provider:Remove(node) end
-	end
-
-	local hookedScrollBox
-	local function InstallAddonListFilter()
-		local scrollBox = AddonList and AddonList.ScrollBox
-		if not scrollBox or hookedScrollBox == scrollBox then return end
-		hookedScrollBox = scrollBox
-		hooksecurefunc(scrollBox, "SetDataProvider", ns.Safe(function(_, provider)
-			HideTransportSlots(provider)
-		end))
-		HideTransportSlots(scrollBox:GetDataProvider())
-	end
-
-	ns:On("Login", InstallAddonListFilter)
-	ns:RegisterEvent("ADDON_LOADED", InstallAddonListFilter)
-end
