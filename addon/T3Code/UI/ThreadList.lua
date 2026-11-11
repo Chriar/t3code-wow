@@ -9,8 +9,8 @@ ns.ThreadList = L
 local LIST_W_DEFAULT = 280
 
 local GROUPS = {
-	{ key = "working", label = "Working" },
 	{ key = "open", label = "Open" },
+	{ key = "working", label = "Working" },
 	{ key = "settled", label = "Settled" },
 }
 
