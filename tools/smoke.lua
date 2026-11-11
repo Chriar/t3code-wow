@@ -769,6 +769,7 @@ do
 	mb._scripts.OnEnter(mb)
 	ns.Tracker:Refresh()
 	check(ns.Store.GROUP_OF.waiting == "working", "waiting threads are listed under Working")
+	check(ns.Store.GROUP_OF.input == "open" and ns.Store.GROUP_OF.plan == "open", "threads that need you are listed under Open, as in T3 Code")
 	ns.Store.data.threads[2] = { id = "i1", title = "Input", s = "input", l = "Needs your approval", p = "p" }
 	ns.MinimapButton:Refresh()
 	check(mb.Badge:IsShown(), "a thread that needs the player badges the minimap button")

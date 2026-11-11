@@ -19,9 +19,12 @@ local Store = {
 }
 ns.Store = Store
 
+-- As T3 Code's sidebar: a thread that needs you (an answer, an approval, a plan to
+-- review) is listed with Open at the top, and Working holds only what's running or
+-- waiting on something else.
 local GROUP_OF = {
-	working = "working", input = "working", plan = "working", waiting = "working",
-	open = "open", failed = "open",
+	working = "working", waiting = "working",
+	input = "open", plan = "open", open = "open", failed = "open",
 	snoozed = "snoozed",
 	settled = "settled",
 }
