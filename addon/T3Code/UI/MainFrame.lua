@@ -176,6 +176,26 @@ function M:CreateThreadsPage(page)
 	end)
 	header.Archive:SetPoint("RIGHT", header.Action, "LEFT", -4, 0)
 	header.Archive:Hide()
+	-- Snooze: a button that opens the shared list of T3's snooze presets, so it carries
+	-- what the list reads from its owner. On a snoozed thread it wakes it instead.
+	header.Snooze = UI.Button(header, "Snooze", 86, function() M:SnoozeAction() end)
+	header.Snooze:SetPoint("RIGHT", header.Action, "LEFT", -4, 0)
+	header.Snooze:Hide()
+	header.Snooze.options = {}
+	header.Snooze.listWidth = 220
+	header.Snooze.Update = function(self) self.value = nil end
+	header.Snooze.onChange = function(value)
+		if value == "custom" then
+			M:OpenCustomSnooze()
+		elseif ns.viewId and value then
+			M:SendSnooze(ns.viewId, value)
+		end
+	end
+	UI.Tooltip(header.Snooze, function(self) return self:GetText() end, function()
+		local t = ns.Store:Thread(ns.viewId)
+		if t and t.s == "snoozed" then return "Bring this thread back to the Open list now." end
+		return "Hide this thread until a time you pick. The times are the snooze presets from T3 Code's settings."
+	end)
 	UI.Tooltip(header.Archive, "Archive", "Hide this thread from the list (it stays in T3 Code's archive).")
 	header.Project = UI.Dropdown(header, 176, function(value)
 		M.newProject = value
@@ -381,12 +401,24 @@ function M:Back()
 		self:ToggleSidebar(true)
 		return
 	end
+	self:CloseThread()
+end
+
+-- Back to no thread selected.
+function M:CloseThread()
 	self:SaveDraft()
 	ns.viewId = nil
 	ns.Transport:Touch()
 	self:LoadDraft()
 	self:Refresh()
 	ns:Fire("ViewSelected", nil)
+end
+
+-- Snooze a thread and remember the command: once the thread is snoozed it leaves the
+-- screen (see ThreadTransition below), and a refused command leaves it open.
+function M:SendSnooze(threadId, ...)
+	local cmd = ns.Transport:Send("snooze", threadId, ...)
+	if cmd then self.pendingSnooze = { cmd = cmd, thread = threadId, at = GetTime() } end
 end
 
 function M:StartNewThread(projectId)
@@ -405,6 +437,97 @@ function M:StartNewThread(projectId)
 	self:Open()
 	self:Refresh()
 	self.composer:SetFocus()
+end
+
+-- T3's snooze presets as the bridge resolved them: { k = id, l = label, w = time }.
+function M:SnoozeOptions()
+	local options = {}
+	local bridge = ns.Store.data.bridge
+	for _, c in ipairs(type(bridge.snz) == "table" and bridge.snz or {}) do
+		table.insert(options, { value = c.k, label = c.w and (c.l .. "  " .. ns.Color("grey", c.w)) or c.l, text = c.l })
+	end
+	-- A bridge that sends presets also reads a typed time.
+	if type(bridge.snz) == "table" then table.insert(options, { value = "custom", label = "Custom…" }) end
+	return options
+end
+
+-- A small box under the Snooze button for typing a time. The bridge reads it, on the
+-- desktop's clock, so the text goes over as typed.
+function M:OpenCustomSnooze()
+	local t = ns.Store:Thread(ns.viewId)
+	if not t then return end
+	local p = self.snoozePanel
+	if not p then
+		local header = self.frame.Pages.threads.Right.Header
+		p = CreateFrame("Frame", "T3CodeSnoozePanel", self.frame)
+		p:SetFrameStrata("FULLSCREEN_DIALOG")
+		p:SetToplevel(true)
+		p:SetSize(272, 112)
+		p:SetPoint("TOPRIGHT", header.Snooze, "BOTTOMRIGHT", 0, -2)
+		p:EnableMouse(true)
+		p:SetClampedToScreen(true)
+		local bg = p:CreateTexture(nil, "BACKGROUND")
+		bg:SetAtlas("common-dropdown-bg")
+		bg:SetPoint("TOPLEFT", -10, 3)
+		bg:SetPoint("BOTTOMRIGHT", 10, -3)
+		bg:SetAlpha(0.95)
+		if not bg:GetAtlas() then bg:SetColorTexture(0.05, 0.05, 0.05, 0.95) end
+		-- Solid behind the text: the transcript underneath would show through the art.
+		local solid = p:CreateTexture(nil, "BACKGROUND", nil, -1)
+		solid:SetAllPoints()
+		solid:SetColorTexture(0.03, 0.03, 0.03, 1)
+		p.Title = UI.Text(p, "GameFontNormal", "LEFT")
+		p.Title:SetPoint("TOPLEFT", 14, -12)
+		p.Title:SetText("Snooze until")
+		p.Box = CreateFrame("EditBox", nil, p, "InputBoxTemplate")
+		p.Box:SetSize(150, 20)
+		p.Box:SetPoint("TOPLEFT", 20, -32)
+		p.Box:SetAutoFocus(false)
+		p.Box:SetMaxLetters(40)
+		p.Box:SetScript("OnEnterPressed", function() M:SubmitCustomSnooze() end)
+		p.Box:SetScript("OnEscapePressed", function() p:Hide() end)
+		p.Go = UI.Button(p, "Snooze", 76, function() M:SubmitCustomSnooze() end)
+		p.Go:SetPoint("LEFT", p.Box, "RIGHT", 6, 0)
+		p.Hint = UI.Text(p, "GameFontDisableSmall", "LEFT")
+		p.Hint:SetPoint("TOPLEFT", 14, -62)
+		p.Hint:SetPoint("RIGHT", -14, 0)
+		p.Hint:SetJustifyV("TOP")
+		p.Hint:SetWordWrap(true)
+		p.Hint:SetText("Try 45m, 3h, 2d, 5pm, tomorrow 9am or fri 3pm.")
+		p:SetScript("OnHide", function() p.Box:ClearFocus() end)
+		p:Hide()
+		tinsert(UISpecialFrames, "T3CodeSnoozePanel")
+		self.snoozePanel = p
+	end
+	p.threadId = t.id
+	p:Show()
+	p.Box:SetFocus()
+	p.Box:HighlightText()
+end
+
+function M:SubmitCustomSnooze()
+	local p = self.snoozePanel
+	if not p or not p.threadId then return end
+	local text = strtrim(p.Box:GetText() or "")
+	if text == "" then return end
+	-- The text stays in the box, so a time the bridge couldn't read is easy to fix.
+	self:SendSnooze(p.threadId, "custom", text)
+	PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+	p:Hide()
+end
+
+function M:SnoozeAction()
+	local t = ns.Store:Thread(ns.viewId)
+	if not t then return end
+	if t.s == "snoozed" then
+		ns.Transport:Send("unsnooze", t.id)
+		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+		return
+	end
+	local button = self.frame.Pages.threads.Right.Header.Snooze
+	button.options = self:SnoozeOptions()
+	button.value = nil
+	if #button.options > 0 then UI.OpenList(button) end
 end
 
 function M:HeaderAction()
@@ -628,6 +751,11 @@ end
 -- or how long ago it finished.
 function M:HeaderText(t)
 	local age = ((t.s == "working" or t.s == "waiting") and t.st) and ns.Duration(time() - t.st) or ns.Ago(t.u)
+	-- A snoozed thread says when it's back, and little else: the Wake button already
+	-- says it's snoozed, and beside the pickers there's only room for the time.
+	if t.s == "snoozed" then
+		return string.format("%s  ·  %s", ns.Color("grey", "Back " .. ns.Until(t.w)), ns.Store:ProjectName(t.p))
+	end
 	return string.format("%s  ·  %s  ·  %s",
 		ns.Color(ns.Store.StatusColor(t.s), ns.Store.StatusText(t.s)), ns.Store:ProjectName(t.p), age)
 end
@@ -642,11 +770,15 @@ function M:Refresh()
 	local right = f.Pages.threads.Right
 	local header = right.Header
 	local t = ns.Store:Thread(ns.viewId)
+	-- The typed-time box belongs to the thread it was opened on.
+	local panel = self.snoozePanel
+	if panel and panel:IsShown() and (panel.threadId ~= ns.viewId or self.mode == "new" or not t or t.s == "snoozed") then panel:Hide() end
 	if self.mode == "new" then
 		f.Subtitle:SetText("New Thread")
 		header.Text:SetText(ns.Color("gold", "New thread in"))
 		header.Action:Hide()
 		header.Archive:Hide()
+		header.Snooze:Hide()
 		header.Project:Show()
 		self:SetupProjectDropdown()
 		local withModel = self:SetupModelDropdown()
@@ -684,18 +816,23 @@ function M:Refresh()
 			header.Action:SetShown(true)
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
 			header.Archive:SetShown(t.s == "settled")
+			-- Snooze shares Archive's place: a settled thread is archived, any other
+			-- snoozed. Without presets from the bridge there's nothing to offer.
+			local snoozable = t.s ~= "settled" and (t.s == "snoozed" or #self:SnoozeOptions() > 0)
+			header.Snooze:SetShown(snoozable)
+			header.Snooze:SetText(t.s == "snoozed" and "Wake" or "Snooze")
 			local withModel = self:SetupModelDropdown()
 			local withEffort = withModel and self:SetupEffortDropdown()
 			if not withEffort then header.Effort:Hide() end
 			header.Model.tipBody = "The model for this thread. A change applies from the next reply on."
 			header.Effort.tipBody = "How hard the model reasons on this thread. A change applies from the next reply on."
-			local anchor = t.s == "settled" and header.Archive or header.Action
+			local anchor = t.s == "settled" and header.Archive or (snoozable and header.Snooze or header.Action)
 			header.Effort:ClearAllPoints()
 			header.Effort:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
 			header.Model:ClearAllPoints()
 			header.Model:SetPoint("RIGHT", withEffort and header.Effort or anchor, "LEFT", -4, 0)
 			local pickers = (withModel and header.Model:GetWidth() + 4 or 0) + (withEffort and header.Effort:GetWidth() + 4 or 0)
-			header.Text:SetPoint("RIGHT", (t.s == "settled" and -200 or -110) - pickers, 0)
+			header.Text:SetPoint("RIGHT", ((t.s == "settled" or snoozable) and -200 or -110) - pickers, 0)
 			local busy = ns.db.settings.steerFollowUps and "Steer the agent" or "Queue a follow-up"
 			self:SetPlaceholder((t.s == "working" and busy or "Message the agent") .. "  (Shift+Enter for a new line)")
 		else
@@ -703,6 +840,7 @@ function M:Refresh()
 			header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))
 			header.Action:Hide()
 			header.Archive:Hide()
+			header.Snooze:Hide()
 			header.Model:Hide()
 			header.Effort:Hide()
 		end
@@ -941,6 +1079,18 @@ ns:On("LinkChanged", function()
 		M:UpdateRefreshButton()
 	end
 end)
+-- A thread the player just snoozed is out of the way now: clear it off the screen so
+-- the next one can be picked. Opening a snoozed thread from the list still shows it.
+ns:On("ThreadTransition", function(t, _, after)
+	local pending = M.pendingSnooze
+	if after ~= "snoozed" or not pending or pending.thread ~= t.id then return end
+	M.pendingSnooze = nil
+	-- Only right after the pick: a busy thread that turns snoozed minutes later, when
+	-- its run ends, shouldn't vanish from under the player.
+	if GetTime() - pending.at > 20 then return end
+	if ns.viewId == t.id and M.mode == "thread" and M.frame then M:CloseThread() end
+end)
+
 ns:On("CommandResult", function(r)
 	if r.ok == false and r.id == M.dictCmd then
 		-- The start was refused before the bridge sent a dictation state; put the
@@ -949,6 +1099,7 @@ ns:On("CommandResult", function(r)
 		M.dictating = false
 		if M.frame and M.frame:IsShown() then M:Refresh() end
 	end
+	if r.ok == false and M.pendingSnooze and r.id == M.pendingSnooze.cmd then M.pendingSnooze = nil end
 	if r.ok == false and r.msg then
 		ns.Print(ns.Color("red", r.msg))
 		if UIErrorsFrame then UIErrorsFrame:AddMessage("T3 Code: " .. r.msg, 1, 0.2, 0.2) end

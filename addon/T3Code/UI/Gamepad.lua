@@ -78,6 +78,7 @@ function G:Candidates()
 		local header = page.Right.Header
 		add(header.Action)
 		add(header.Archive)
+		add(header.Snooze)
 		add(header.Project)
 		add(header.Model)
 		add(header.Effort)
@@ -315,7 +316,7 @@ function G:Zone(cur)
 	local right = main.frame.Pages.threads.Right
 	if w == ns.ThreadList.dropdown or cur.box == ns.ThreadList.scrollBox then return "list" end
 	local h = right.Header
-	if w == main.composer or w == h.Action or w == h.Archive or w == h.Project or w == h.Model or w == h.Effort or cur.box == ns.Transcript.scrollBox then
+	if w == main.composer or w == h.Action or w == h.Archive or w == h.Snooze or w == h.Project or w == h.Model or w == h.Effort or cur.box == ns.Transcript.scrollBox then
 		return "convo"
 	end
 	for _, key in ipairs({ "Refresh", "New", "Back", "Stop", "Mic", "Speak", "Shot", "Send" }) do
@@ -337,10 +338,10 @@ function G:ExplicitMove(cur, dirKey)
 
 	if zone == "convo" then
 		-- The header row, left to right: [Project] [Model] [Reasoning] on a new
-		-- thread, [Model] [Reasoning] [Archive] [Settle] on an open one.
+		-- thread, [Model] [Reasoning] [Archive or Snooze] [Settle] on an open one.
 		local h = right.Header
 		local row = {}
-		for _, w in ipairs({ h.Project, h.Model, h.Effort, h.Archive, h.Action }) do
+		for _, w in ipairs({ h.Project, h.Model, h.Effort, h.Archive, h.Snooze, h.Action }) do
 			if Usable(w) then table.insert(row, w) end
 		end
 		local at

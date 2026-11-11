@@ -22,6 +22,7 @@ ns.Store = Store
 local GROUP_OF = {
 	working = "working", input = "working", plan = "working", waiting = "working",
 	open = "open", failed = "open",
+	snoozed = "snoozed",
 	settled = "settled",
 }
 Store.GROUP_OF = GROUP_OF
@@ -108,7 +109,7 @@ end
 -- Threads grouped for the sidebar, filtered by project.
 -- projectFilter: "all", a project id, or "m:<machine>" ("m:local" for this one).
 function Store:Groups(projectFilter, query)
-	local groups = { working = {}, open = {}, settled = {} }
+	local groups = { working = {}, open = {}, snoozed = {}, settled = {} }
 	local machine = projectFilter and projectFilter:match("^m:(.+)$")
 	for _, t in ipairs(self.data.threads) do
 		local match
@@ -268,11 +269,11 @@ end
 
 local STATUS_TEXT = {
 	working = "Working", input = "Needs you", plan = "Plan ready", waiting = "Waiting",
-	open = "Finished", failed = "Failed", settled = "Settled",
+	open = "Finished", failed = "Failed", snoozed = "Snoozed", settled = "Settled",
 }
 local STATUS_COLOR = {
 	working = "blue", input = "orange", plan = "orange", waiting = "grey",
-	open = "white", failed = "red", settled = "grey",
+	open = "white", failed = "red", snoozed = "grey", settled = "grey",
 }
 
 function Store.StatusText(s)

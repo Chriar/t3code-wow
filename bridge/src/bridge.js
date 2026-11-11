@@ -19,6 +19,7 @@ import { SlotBank, replaceFile, FileInUse } from './slots.js';
 import { threadStatus, isUnread, effortOf, waitingOn } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
+import { snoozeChoices, snoozedUntil, parseCustomSnooze, describeWhen } from './snooze.js';
 import { Voice } from './voice.js';
 import { OmarchyUsage, mergeUsage } from './usage.js';
 import { findWowProcess, processKey } from './wow.js';
@@ -35,7 +36,7 @@ const sec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) : undefined);
 const fingerprint = (value) => createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 16);
 
 const ACTIVE = new Set(['working', 'input', 'plan']);
-const ORDER = { input: 0, plan: 1, working: 2, waiting: 3, failed: 4, open: 5, settled: 6 };
+const ORDER = { input: 0, plan: 1, working: 2, waiting: 3, failed: 4, open: 5, snoozed: 6, settled: 7 };
 // Busy, from the player's point of view: the agent isn't done with the thread yet.
 const BUSY = new Set(['working', 'waiting']);
 
@@ -315,6 +316,7 @@ export class Bridge {
     clearInterval(this.statusTimer);
     clearInterval(this.usageTimer);
     clearTimeout(this.publishTimer);
+    clearTimeout(this.wakeTimer);
     this.t3.stop();
     this.voice.hush();
     this.saveStateNow();
@@ -527,6 +529,26 @@ export class Bridge {
         case 'unsettle':
           await this.t3.unsettle(a0);
           break;
+        case 'snooze': {
+          // a1 names one of T3's snooze presets; the time is worked out here, on the
+          // desktop's clock, at the moment the player picked it.
+          if (a1 === 'custom') {
+            // A time the player typed, read on the desktop's clock.
+            const until = parseCustomSnooze(a2);
+            if (!until) throw new Error("Couldn't read that as a time ahead. Try 45m, 3h, 5pm or tomorrow 9am.");
+            await this.t3.snooze(a0, until);
+            msg = `Snoozed until ${describeWhen(until)}`;
+            break;
+          }
+          const choice = snoozeChoices(this.snoozePresets()).find((c) => c.id === a1);
+          if (!choice) throw new Error('That snooze time has passed. Pick another.');
+          await this.t3.snooze(a0, choice.until);
+          msg = `Snoozed: ${choice.label.toLowerCase()}`;
+          break;
+        }
+        case 'unsnooze':
+          await this.t3.unsnooze(a0);
+          break;
         case 'archive':
           await this.t3.archive(a0);
           break;
@@ -713,6 +735,8 @@ export class Bridge {
       if (before !== status) {
         this.markDirty('important');
         if (t.lineage?.parentThreadId) return; // no announcements for subagent threads
+        // A snoozed thread stays quiet: the player asked not to hear about it yet.
+        if (status === 'snoozed') return;
         if (BUSY.has(before) && !BUSY.has(status)) this.announce(t, status);
         else if (status === 'input' && before !== 'input') this.announce(t, status);
       } else {
@@ -759,8 +783,29 @@ export class Bridge {
   // ---------------------------------------------------------------------------
   // Snapshot
 
+  snoozePresets() {
+    return this.t3.config?.settings?.snoozePresets;
+  }
+
+  // A snooze ends by the clock, with or without an event from T3, so wake up then
+  // and publish the thread back into the Open list.
+  scheduleWake() {
+    clearTimeout(this.wakeTimer);
+    if (this.stopped) return;
+    const now = Date.now();
+    let next = 0;
+    for (const t of this.t3.threads.values()) {
+      const until = snoozedUntil(t, now);
+      if (until && (!next || until < next)) next = until;
+    }
+    if (!next) return;
+    this.wakeTimer = setTimeout(() => this.markDirty('important'), Math.min(next - now + 1000, 0x7fffffff));
+    this.wakeTimer.unref?.();
+  }
+
   buildSnapshot() {
     const t3 = this.t3;
+    this.scheduleWake();
     const projects = [];
     const usedProjects = new Set();
     let threads = [...t3.threads.values()]
@@ -780,6 +825,7 @@ export class Bridge {
       else if (s === 'waiting') label = waitingOn(t);
       else if (s === 'plan') label = 'Plan ready';
       else if (s === 'failed') label = t.lastError ? `Failed: ${String(t.lastError).slice(0, 60)}` : 'Failed';
+      else if (s === 'snoozed') label = 'Snoozed';
       else if (s === 'settled') label = 'Settled';
       else label = t.status === 'interrupted' ? 'Stopped' : 'Finished';
       const last = proj ? lastAssistantText(proj) : t.latestVisibleMessage?.role === 'assistant' ? t.latestVisibleMessage.text : null;
@@ -794,13 +840,15 @@ export class Bridge {
         u: s === 'working' ? undefined : sec(t.updatedAt),
         // Waiting counts from when the last run ended, as in T3's sidebar.
         st: s === 'waiting' ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
-        un: s !== 'settled' && isUnread(t) ? true : undefined,
+        un: s !== 'settled' && s !== 'snoozed' && isUnread(t) ? true : undefined,
+        // When a snoozed thread comes back.
+        w: s === 'snoozed' ? sec(t.snoozedUntil) : undefined,
         br: t.branch ? escapeWow(t.branch) : undefined,
         m: t.modelSelection?.model,
         mi: t.modelSelection?.instanceId,
         re: effortOf(t.modelSelection),
         env: t._env && !t._env.local ? escapeWow(t._env.label) : undefined,
-        last: last && ACTIVE.has(s) === false && s !== 'settled' ? escapeWow(firstLine(last, 160)) : undefined,
+        last: last && ACTIVE.has(s) === false && s !== 'settled' && s !== 'snoozed' ? escapeWow(firstLine(last, 160)) : undefined,
       };
     });
     for (const p of t3.projects.values()) {
@@ -877,6 +925,8 @@ export class Bridge {
         dictation: voice.dictation || undefined,
         dictationHint: voice.hint || undefined,
         slots: this.bank.slots,
+        // T3's snooze presets as the choices to offer right now.
+        snz: snoozeChoices(this.snoozePresets()).map((c) => ({ k: c.id, l: escapeWow(c.label), w: c.when ? escapeWow(c.when) : undefined })),
         envs: t3.envs.length > 1 ? t3.environments().map((e) => ({ label: escapeWow(e.label), state: e.state, local: e.local, n: e.threads })) : undefined,
       },
       projects,
