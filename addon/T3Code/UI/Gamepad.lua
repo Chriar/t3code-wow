@@ -82,6 +82,8 @@ function G:Candidates()
 		add(header.Project)
 		add(header.Model)
 		add(header.Effort)
+		add(ns.Family.bar.Up)
+		add(ns.Family.bar.Kids)
 		local tbox = ns.Transcript.scrollBox
 		tbox:ForEachFrame(function(frame, ed)
 			if ed.kind == "option" and InsideBox(frame, tbox) then add(frame, tbox, ed) end
@@ -238,17 +240,33 @@ local DIRS = {
 	PADDUP = { 0, 1 }, PADDDOWN = { 0, -1 }, PADDLEFT = { -1, 0 }, PADDRIGHT = { 1, 0 },
 }
 
+-- Hold the cursor on `w` while a thread opened from the family bar loads. Land moves it
+-- on from there, unless the player has moved it in the meantime.
+function G:Park(w)
+	if not self.capturing then return end
+	self:Highlight(w)
+	self.parked = w
+end
+
+function G:Land(w)
+	local parked = self.parked
+	self.parked = nil
+	if parked and self.selected == parked and Usable(w) then self:Highlight(w) end
+end
+
 ---------------------------------------------------------------------------
 -- Explicit routes on the Threads page. Pure geometry gives odd jumps between the
 -- thread list, the conversation and the message box, so those moves are fixed:
 --   list  --Right-->  first answer option if the agent is asking, else message box
---   conversation  Up/Down:  Settle -> options (in order, scrolled into view) -> box
+--   conversation  Up/Down:  Settle -> family bar -> options (in order, scrolled into
+--                 view) -> box
 --   box  --Down-->  Send
 --   conversation  --Left-->  the open thread's row in the list
 --   bottom buttons  --Up-->  the list (under it) or the message box
+--   an open list  Up/Down:  its rows in order, scrolled into view
 
 -- Select element `index` of a ScrollBox, scrolling it into view first if needed.
-local function SelectInBox(box, index)
+local function SelectInBox(box, index, align)
 	local ed = index and box:FindElementData(index)
 	if not ed then return false end
 	local frame = box:FindFrame(ed)
@@ -256,7 +274,7 @@ local function SelectInBox(box, index)
 		G:Highlight(frame)
 		return true
 	end
-	box:ScrollToElementDataIndex(index, ScrollBoxConstants.AlignCenter, nil, true)
+	box:ScrollToElementDataIndex(index, align or ScrollBoxConstants.AlignCenter, nil, true)
 	C_Timer.After(0, function()
 		local fr = box:FindFrame(box:FindElementData(index))
 		if fr then G:Highlight(fr) end
@@ -296,6 +314,18 @@ function G:SelectConversation()
 	return false
 end
 
+-- The next choice in an open list from `ed`, by its place in the list (step 1 is down).
+local function StepInList(box, ed, step)
+	local index = box:FindElementDataIndex(ed)
+	if not index then return false end
+	local last = step > 0 and box:GetDataProviderSize() or 1
+	for i = index + step, last, step do
+		local e = box:FindElementData(i)
+		if e and not e.header then return SelectInBox(box, i, ScrollBoxConstants.AlignNearest) end
+	end
+	return false
+end
+
 function G:SelectOpenThreadRow()
 	local box = ns.ThreadList.scrollBox
 	local first
@@ -315,8 +345,9 @@ function G:Zone(cur)
 	local w = cur.w
 	local right = main.frame.Pages.threads.Right
 	if w == ns.ThreadList.dropdown or cur.box == ns.ThreadList.scrollBox then return "list" end
-	local h = right.Header
-	if w == main.composer or w == h.Action or w == h.Archive or w == h.Snooze or w == h.Project or w == h.Model or w == h.Effort or cur.box == ns.Transcript.scrollBox then
+	local h, bar = right.Header, ns.Family.bar
+	if w == main.composer or w == h.Action or w == h.Archive or w == h.Snooze or w == h.Project or w == h.Model or w == h.Effort
+		or w == bar.Up or w == bar.Kids or cur.box == ns.Transcript.scrollBox then
 		return "convo"
 	end
 	for _, key in ipairs({ "Refresh", "New", "Back", "Stop", "Mic", "Speak", "Shot", "Send" }) do
@@ -337,15 +368,23 @@ function G:ExplicitMove(cur, dirKey)
 	end
 
 	if zone == "convo" then
-		-- The header row, left to right: [Project] [Model] [Reasoning] on a new
-		-- thread, [Model] [Reasoning] [Archive or Snooze] [Settle] on an open one.
-		local h = right.Header
-		local row = {}
-		for _, w in ipairs({ h.Project, h.Model, h.Effort, h.Archive, h.Snooze, h.Action }) do
-			if Usable(w) then table.insert(row, w) end
+		-- Two rows of buttons, left to right. The header: [Project] [Model] [Reasoning]
+		-- on a new thread, [Model] [Reasoning] [Archive or Snooze] [Settle] on an open
+		-- one. Under it, the family bar: [Up] [Kids].
+		local h, bar = right.Header, ns.Family.bar
+		local rows = {}
+		for n, ws in ipairs({ { h.Project, h.Model, h.Effort, h.Archive, h.Snooze, h.Action }, { bar.Up, bar.Kids } }) do
+			rows[n] = {}
+			for _, w in ipairs(ws) do
+				if Usable(w) then table.insert(rows[n], w) end
+			end
 		end
-		local at
-		for n, w in ipairs(row) do if w == cur.w then at = n end end
+		local row, at
+		for _, r in ipairs(rows) do
+			for n, w in ipairs(r) do
+				if w == cur.w then row, at = r, n end
+			end
+		end
 		if at and (dirKey == "PADDLEFT" or dirKey == "PADDRIGHT") then
 			local target = row[at + (dirKey == "PADDRIGHT" and 1 or -1)]
 			if target then
@@ -361,10 +400,12 @@ function G:ExplicitMove(cur, dirKey)
 			return listShown and self:SelectOpenThreadRow() or false
 		end
 		if dirKey == "PADDUP" or dirKey == "PADDDOWN" then
-			-- The column, top to bottom.
+			-- The column, top to bottom. Anywhere on a row of buttons counts as the
+			-- row's place in it.
 			local seq = {}
-			local top = Usable(right.Header.Action) and right.Header.Action or (Usable(right.Header.Project) and right.Header.Project)
-			if top then table.insert(seq, { w = top }) end
+			local top = Usable(h.Action) and h.Action or (Usable(h.Project) and h.Project)
+			if top then table.insert(seq, { w = top, row = rows[1] }) end
+			if rows[2][1] then table.insert(seq, { w = rows[2][1], row = rows[2] }) end
 			if main.mode ~= "new" then
 				for _, i in ipairs(OptionIndexes()) do table.insert(seq, { index = i }) end
 			end
@@ -372,10 +413,8 @@ function G:ExplicitMove(cur, dirKey)
 			local pos
 			local curIndex = cur.box == ns.Transcript.scrollBox and ns.Transcript.scrollBox:FindElementDataIndex(cur.ed)
 			for n, entry in ipairs(seq) do
-				if (entry.w and entry.w == cur.w) or (entry.index and entry.index == curIndex) then pos = n end
+				if entry.w == cur.w or (row and entry.row == row) or (entry.index and entry.index == curIndex) then pos = n end
 			end
-			-- Anywhere on the header row counts as its top.
-			if not pos and at and top then pos = 1 end
 			if not pos then return false end
 			local nextPos = pos + (dirKey == "PADDDOWN" and 1 or -1)
 			if nextPos > #seq then
@@ -403,12 +442,22 @@ end
 function G:Move(dirKey)
 	local d = DIRS[dirKey]
 	if not d then return end
+	self.parked = nil
 	local cur = self:Validate()
 	if not cur then
 		self:SelectDefault()
 		return
 	end
-	if not UI.ListOpen() and self:ExplicitMove(cur, dirKey) then
+	local open = UI.ListOpen()
+	if open then
+		-- A list is one column: Up and Down step through its rows in order, so every
+		-- row is reachable, however far it's scrolled.
+		if d[2] ~= 0 and StepInList(open.Box, cur.ed, -d[2]) then
+			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+		end
+		return
+	end
+	if self:ExplicitMove(cur, dirKey) then
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 		return
 	end
@@ -431,12 +480,9 @@ function G:Move(dirKey)
 		local size = box:GetDataProviderSize()
 		local step = d[2] > 0 and -1 or 1
 		local nextIndex = index and index + step
-		-- A dropdown's group headers aren't choices; the thread list's are.
-		local open = UI.ListOpen()
-		local headers = not (open and box == open.Box)
 		while nextIndex and nextIndex >= 1 and nextIndex <= size do
 			local ed = box:FindElementData(nextIndex)
-			if ed and (ed.thread or (ed.header and headers) or ed.kind == "option" or ed.value ~= nil) then break end
+			if ed and (ed.thread or ed.header or ed.kind == "option") then break end
 			nextIndex = nextIndex + step
 		end
 		local frame = nextIndex and nextIndex >= 1 and nextIndex <= size and box:FindFrame(box:FindElementData(nextIndex))
@@ -458,6 +504,7 @@ function G:Move(dirKey)
 end
 
 function G:Activate()
+	self.parked = nil
 	local cur = self:Validate()
 	if not cur then
 		self:SelectDefault()

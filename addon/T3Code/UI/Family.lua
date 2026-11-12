@@ -103,7 +103,7 @@ function F:Create(right, header)
 	up:SetScript("OnClick", function(self)
 		if not self.target then return end
 		PlaySound(SOUNDKIT.IG_QUEST_LOG_OPEN or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-		F:Open(self.target)
+		F:Open(self.target, "kids")
 	end)
 	UI.Tooltip(up, function(self) return self.title end, function(self) return self.tip end)
 	up:SetScript("OnSizeChanged", function() F:Fit() end)
@@ -117,7 +117,7 @@ function F:Create(right, header)
 	kids.listWidth = 380
 	kids.listAlignRight = true
 	kids.Update = function(self) self.value = nil end
-	kids.onChange = function(id) F:Open(id) end
+	kids.onChange = function(id) F:Open(id, "up") end
 	UI.Tooltip(kids, function(self) return self:GetText() end, "Threads this one started. Pick one to open it.")
 	bar.Kids = kids
 
@@ -145,7 +145,10 @@ function F:Refresh()
 	local shown = (up or kids) and true or false
 	bar:SetShown(shown)
 	ns.Transcript:SetTop(shown and bar or nil)
-	if not shown then return end
+	if not shown then
+		self:LandBack(false)
+		return
+	end
 
 	local k = bar.Kids
 	k:SetShown(kids ~= nil)
@@ -182,9 +185,29 @@ function F:Refresh()
 		if kids then b:SetPoint("RIGHT", k, "LEFT", -8, 0) else b:SetPoint("RIGHT", -2, 0) end
 		self:Fit()
 	end
+	self:LandBack(shown)
 end
 
--- Open relative `id`.
-function F:Open(id)
+-- Open relative `id`. `back` names the control that leads back where the player came
+-- from: "up" after going down to a child, "kids" after going up to a parent. The
+-- controller cursor waits on the message box until the new thread's bar shows it.
+function F:Open(id, back)
+	self.back = { id = id, to = back }
+	ns.Gamepad:Park(ns.Main.composer)
 	ns.Main:SelectThread(id)
+end
+
+function F:LandBack(shown)
+	local back = self.back
+	if not back then return end
+	if back.id ~= ns.viewId then
+		self.back = nil
+	elseif shown then
+		self.back = nil
+		ns.Gamepad:Land(back.to == "up" and self.bar.Up or self.bar.Kids)
+	elseif ns.Store:View() then
+		-- Its snapshot came with no family to show, so nothing leads back.
+		self.back = nil
+		ns.Gamepad:Land(nil)
+	end
 end

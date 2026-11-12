@@ -718,6 +718,73 @@ do
 	check(label({ "sub", "fork", "sent" }, { "waiting", "working", "open" }) == "Started here (3) · 2 working", "mixed children are threads started here")
 end
 
+-- Controller: the bar is a row of its own in the conversation column.
+do
+	local G = ns.Gamepad
+	check(G.capturing, "the controller drives the window")
+	local grandkids = { { id = "thread:grandchild", t = "Grandchild", s = "open", k = "sub" } }
+	ns.Main:SelectThread(KidId(7))
+	ShowFamily(ChildFamily(7, nil, grandkids))
+	G:Highlight(hdr.Action)
+	down(f, "PADDDOWN")
+	check(G.selected == bar.Up, "Down from Settle goes to Up")
+	down(f, "PADDRIGHT")
+	check(G.selected == bar.Kids, "Right from Up goes to Kids")
+	down(f, "PADDLEFT")
+	check(G.selected == bar.Up, "Left from Kids goes back to Up")
+	down(f, "PADDLEFT")
+	local inList = false
+	for _, r in ipairs(ns.ThreadList.scrollBox._rows) do if r.frame == G.selected and r.ed.thread then inList = true end end
+	check(inList, "Left past Up goes to the thread list")
+	G:Highlight(bar.Up)
+	down(f, "PADDUP")
+	check(G.selected == hdr.Action, "Up from the bar goes back to Settle")
+	G:Highlight(ns.Main.composer)
+	down(f, "PADDUP")
+	check(G.selected == bar.Up, "Up from the message box goes to the bar")
+
+	down(f, "PAD1")
+	check(ns.viewId == FAMILY_PARENT and G.selected == ns.Main.composer, "A on Up opens the parent; the cursor waits on the message box")
+	ShowFamily(ParentFamily())
+	check(G.selected == bar.Kids, "once the parent's bar shows, the cursor is on Kids, the way back")
+
+	down(f, "PAD1")
+	local l = ns.UI.ListOpen()
+	check(l and l.owner == bar.Kids, "A on Kids opens the list")
+	local function onRow()
+		for _, r in ipairs(l.Box._rows) do if r.frame == G.selected then return r.ed.value end end
+	end
+	check(onRow() == KidId(1), "the cursor starts on the first child")
+	for _ = 1, 40 do down(f, "PADDDOWN") end
+	check(onRow() == KidId(31), "Down walks the list by its order to the last of 31 children")
+	down(f, "PADDUP")
+	check(onRow() == KidId(30), "and Up steps back")
+	down(f, "PADDDOWN")
+	-- In game the list's close is handled a frame later; run the timers in that order.
+	local queued, after = {}, C_Timer.After
+	C_Timer.After = function(_, fn) table.insert(queued, fn) end
+	down(f, "PAD1")
+	C_Timer.After = after
+	for _, fn in ipairs(queued) do fn() end
+	check(ns.viewId == KidId(31) and G.selected == ns.Main.composer, "A opens that child, and the list closing doesn't pull the cursor off the message box")
+	ShowFamily(ChildFamily(31))
+	check(G.selected == bar.Up, "once the child's bar shows, the cursor is on Up, the way back")
+
+	down(f, "PAD1")
+	down(f, "PADDDOWN")
+	ShowFamily(ParentFamily())
+	check(ns.viewId == FAMILY_PARENT and G.selected == f.Bar.Send, "a cursor the player moved while it loaded stays where they put it")
+
+	ns.Main:SelectThread(KidId(8))
+	ShowFamily(ChildFamily(8, { t = "Elsewhere", k = "sent" }))
+	local candidate = false
+	for _, c in ipairs(G:Candidates()) do if c.w == bar.Up then candidate = true end end
+	check(bar.Up:IsShown() and not candidate, "a link to a computer the bridge doesn't know is shown, but the cursor can't land on it")
+	G:Highlight(hdr.Action)
+	down(f, "PADDDOWN")
+	check(G.selected == ns.Main.composer, "Down from Settle passes it by")
+end
+
 ns.Main:SelectThread(savedFamily.view)
 data.fam, data.view = savedFamily.fam, savedFamily.data
 data.gen = data.gen + 1
