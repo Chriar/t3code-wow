@@ -287,13 +287,15 @@ end
 function S:Attach(composer)
 	local editBox = composer:GetEditBox()
 	editBox:HookScript("OnTabPressed", ns.Safe(function() S:Accept() end))
-	editBox:HookScript("OnArrowPressed", ns.Safe(function(_, key)
+	-- Measured in game: this multi-line box never fires OnArrowPressed, but OnKeyDown
+	-- reports the arrows as "UP", "DOWN", "LEFT" and "RIGHT".
+	editBox:HookScript("OnKeyDown", ns.Safe(function(_, key)
 		local s = S.state
 		if not s then return end
 		if key == "UP" or key == "DOWN" then
 			S:Move(key == "UP" and -1 or 1)
-			-- A multi-line box also moves its cursor on Up and Down, before or after this
-			-- handler: put it back now and once the move has happened.
+			-- In a message of several lines the box may also move its cursor up or down a
+			-- line: put it back now and once the move has happened.
 			local cursor = s.cursor
 			editBox:SetCursorPosition(cursor)
 			C_Timer.After(0, function() if S.state then editBox:SetCursorPosition(cursor) end end)

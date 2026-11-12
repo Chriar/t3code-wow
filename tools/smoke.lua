@@ -456,7 +456,7 @@ do
 	check(S.state == nil, "a / inside a word is not a command")
 
 	typed("/co")
-	eb._scripts.OnArrowPressed(eb, "DOWN")
+	eb._scripts.OnKeyDown(eb, "DOWN")
 	check(S.state.index == 2 and eb:GetCursorPosition() == 3, "Down moves the highlight and leaves the cursor where it was")
 	eb._scripts.OnTabPressed(eb)
 	check(box._text == "/pr-comments " and eb:GetCursorPosition() == #box._text and S.state == nil, "Tab puts the highlighted one in, with a space: " .. box._text)
@@ -480,7 +480,7 @@ do
 	for i = 1, 20 do long[i] = { t = string.format("/cmd%02d", i) } end
 	ns.Store.commands = { [env] = { [instanceId] = long } }
 	typed("/")
-	for _ = 1, 9 do eb._scripts.OnArrowPressed(eb, "DOWN") end
+	for _ = 1, 9 do eb._scripts.OnKeyDown(eb, "DOWN") end
 	check(S.state.index == 10 and S.state.offset == 3 and S.frame.Rows[8].index == 10, "Down past the last row scrolls the list")
 	S.frame._scripts.OnMouseWheel(S.frame, -1)
 	check(S.state.offset == 6 and S.state.index == 10, "the wheel scrolls it")
