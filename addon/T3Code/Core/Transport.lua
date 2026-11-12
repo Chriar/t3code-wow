@@ -293,16 +293,27 @@ function T:Acknowledge(seq)
 	end
 end
 
--- Queue a command for the bridge. Returns its id.
 -- A command that can't fit in a frame next to the hello would never go, and would
 -- hold up every command queued after it, so it's refused here. The hello grows after
--- a command is queued (a thread picked, its hashes filled in), so leave room for that.
-local HELLO_GROWTH = 113
+-- a command is queued: its counters and flags, the thread picked (a subagent's id is
+-- about 125 characters, 3 more on another machine) and a hash for each part it doesn't
+-- hold yet. Leave room for all of that.
+local LONGEST_ID, HASH_LEN, COUNTERS = 160, 16, 10
 
+local function HelloGrowth()
+	local Store = ns.Store
+	local grow = COUNTERS + math.max(0, LONGEST_ID - #(link and ns.viewId or ""))
+	local keys = { Store.listKey }
+	for _, part in ipairs(Store.PARTS) do table.insert(keys, Store[part.key]) end
+	for _, key in ipairs(keys) do grow = grow + math.max(0, HASH_LEN - #(link and key or "")) end
+	return grow
+end
+
+-- Queue a command for the bridge. Returns its id.
 function T:Send(verb, ...)
 	local db = ns.db
 	local rec = Codec.Record({ "C", (db.cmdId or 0) + 1, verb, ... })
-	if #self:Hello() + 1 + #rec + HELLO_GROWTH > Codec.MAX_PAYLOAD - Codec.SEAL_OVERHEAD then
+	if #self:Hello() + 1 + #rec + HelloGrowth() > Codec.MAX_PAYLOAD - Codec.SEAL_OVERHEAD then
 		ns.Print("That's too long to send from the game. Shorten it to about 2,000 characters and try again.")
 		return nil
 	end

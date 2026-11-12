@@ -85,6 +85,7 @@ C  id  verb  args…                      (one per queued command)
   tell a `/reload` happened.
 - `modelsHash` is the hash of the model list the addon holds (empty until it has one). The bridge sends the list, several KB, only while this differs from its own, so it costs one publish after a `/reload` or a change in T3 Code instead of every publish.
 - `listHash`, `projectsHash`, `viewHash` and `familyHash` are the hashes of the thread list, the project list, the transcript and the open thread's family the addon holds (empty until it has one). The bridge leaves the project list, the transcript (up to 60 KB) and the family out of a publish while they still match, and names them in the snapshot's `same` field (`p`, `v`, `f`) so the addon keeps them. Only a part the snapshot actually carried is recorded, and the bridge stops trusting a hash as soon as it publishes a different part, so a part can be repeated but never dropped. `PARTS` in `bridge.js` and `Store.PARTS` in the addon list these parts in the hello's order.
+- The addon queues a command only if it would still fit beside the hello after the hello grows: another thread opened (a subagent's id is about 125 characters) and every hash filled in. A command that didn't fit would never go, and would hold up the commands behind it.
 - `flags`:
   - `o`: window open
   - `t`: tracker on

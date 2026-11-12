@@ -599,6 +599,42 @@ do
 	ns.Transport:Apply(data)
 end
 
+-- A command the addon accepts must still fit beside the hello after the player opens a
+-- subagent, whose id is about 125 characters, or it would never go.
+do
+	local T, Store = ns.Transport, ns.Store
+	local savedView, savedQueue = ns.viewId, T.queue
+	T.queue = {}
+	local saved = { Store.listKey, Store.projectsKey, Store.viewKey, Store.familyKey }
+	local hash = string.rep("a", 16)
+	local project = Store.data.projects[1].id
+	ns.viewId = nil
+	Store.listKey, Store.projectsKey, Store.viewKey, Store.familyKey = hash, hash, "", ""
+	local function accepted(n)
+		local before = #T.queue
+		T:Send("new", project, string.rep("x", n))
+		if #T.queue == before then return false end
+		table.remove(T.queue)
+		return true
+	end
+	local lo, hi = 0, 3000
+	while hi - lo > 1 do
+		local mid = math.floor((lo + hi) / 2)
+		if accepted(mid) then lo = mid else hi = mid end
+	end
+	check(lo >= 2000, "a new thread of 2,000 characters still goes: up to " .. lo)
+	T:Send("new", project, string.rep("x", lo))
+	ns.viewId = "e1~thread:delegated-task:" .. string.rep("s", 105)
+	Store.viewKey, Store.familyKey = hash, hash
+	check(T:Payload():find(string.rep("x", lo), 1, true) ~= nil, "the longest one accepted still fits once a subagent is open")
+	table.remove(T.queue)
+	ns.viewId = "00000000-0000-0000-0000-000000000000"
+	T:Send("send", ns.viewId, string.rep("x", 2000), "steer")
+	check(#T.queue == 1, "a 2,000-character message to an open thread still goes")
+	ns.viewId, T.queue = savedView, savedQueue
+	Store.listKey, Store.projectsKey, Store.viewKey, Store.familyKey = saved[1], saved[2], saved[3], saved[4]
+end
+
 -- Launching without a keyboard
 check(ns.Launcher.chord == "PADLTRIGGER-PADRTRIGGER-PADBACK", "controller shortcut: both triggers + Back")
 check(next(Stub.overrides) == nil, "no key bindings overridden (Forever's controller mode ignores them)")
