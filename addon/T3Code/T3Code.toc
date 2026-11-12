@@ -21,6 +21,7 @@ Core\Store.lua
 UI\Templates.xml
 UI\Widgets.lua
 UI\MainFrame.lua
+UI\Suggest.lua
 UI\ThreadList.lua
 UI\Transcript.lua
 UI\Usage.lua

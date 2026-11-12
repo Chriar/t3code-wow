@@ -1,5 +1,5 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\..\Blizzard_SharedXML\UI.xsd">
-	<!-- The message box: Enter sends, Shift+Enter adds a line (handled in MainFrame.lua). -->
+	<!-- The message box: Enter sends (or takes the highlighted suggestion), Shift+Enter adds a line (handled in MainFrame.lua). -->
 	<Frame name="T3CodeComposerTemplate" inherits="ScrollingEditBoxTemplate" virtual="true">
 		<KeyValues>
 			<KeyValue key="useDefaultEnterHandling" value="false" type="boolean"/>

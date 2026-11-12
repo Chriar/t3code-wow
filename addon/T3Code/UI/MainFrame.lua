@@ -232,12 +232,19 @@ function M:CreateThreadsPage(page)
 	box:RegisterCallback("OnEnterPressed", function()
 		if IsShiftKeyDown() then
 			box:Insert("\n")
-		else
+		elseif not ns.Suggest:Accept() then
 			M:Send()
 		end
 	end, M)
-	box:RegisterCallback("OnTextChanged", function() M:UpdateCounter() ns.Interacted() end, M)
-	box:RegisterCallback("OnEscapePressed", function() box:ClearFocus() end, M)
+	box:RegisterCallback("OnTextChanged", function(_, _, userChanged)
+		M:UpdateCounter()
+		ns.Interacted()
+		ns.Suggest:OnTextChanged(userChanged)
+	end, M)
+	box:RegisterCallback("OnEscapePressed", function()
+		if not ns.Suggest:Close() then box:ClearFocus() end
+	end, M)
+	ns.Suggest:Attach(box)
 	right.Composer = box
 	self.composer = box
 	self:SetPlaceholder("Message the agent  (Shift+Enter for a new line)")
@@ -855,6 +862,7 @@ function M:Refresh()
 	f.Bar.Mic.Icon:SetVertexColor(self.dictating and 1 or 1, self.dictating and 0.3 or 1, self.dictating and 0.3 or 1)
 	f.Bar.Back:SetEnabled(self.mode == "new" or ns.viewId ~= nil or not f.Pages.threads.Left:IsShown())
 	self:UpdateCounter()
+	ns.Suggest:Sync()
 	ns.ThreadList:Refresh()
 	ns.Transcript:Refresh()
 end
