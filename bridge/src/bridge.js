@@ -828,6 +828,7 @@ export class Bridge {
       else if (s === 'snoozed') label = 'Snoozed';
       else if (s === 'settled') label = 'Settled';
       else label = t.status === 'interrupted' ? 'Stopped' : 'Finished';
+      const running = isRunning(t);
       const last = proj ? lastAssistantText(proj) : t.latestVisibleMessage?.role === 'assistant' ? t.latestVisibleMessage.text : null;
       return {
         id: t.id,
@@ -835,11 +836,11 @@ export class Bridge {
         p: t.projectId,
         s,
         l: escapeWow(label),
-        // A working thread's update time changes with every tool call but isn't shown
+        // A running thread's update time changes with every tool call but isn't shown
         // (the game shows elapsed time), so leave it out to avoid pointless publishes.
-        u: s === 'working' ? undefined : sec(t.updatedAt),
+        u: running ? undefined : sec(t.updatedAt),
         // Waiting between runs counts from when the last run ended, as in T3's sidebar.
-        st: s === 'waiting' && !isRunning(t) ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
+        st: s === 'waiting' && !running ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
         un: s !== 'settled' && s !== 'snoozed' && isUnread(t) ? true : undefined,
         // When a snoozed thread comes back.
         w: s === 'snoozed' ? sec(t.snoozedUntil) : undefined,
@@ -848,7 +849,9 @@ export class Bridge {
         mi: t.modelSelection?.instanceId,
         re: effortOf(t.modelSelection),
         env: t._env && !t._env.local ? escapeWow(t._env.label) : undefined,
-        last: last && ACTIVE.has(s) === false && s !== 'settled' && s !== 'snoozed' ? escapeWow(firstLine(last, 160)) : undefined,
+        last: last && !running && ACTIVE.has(s) === false && s !== 'settled' && s !== 'snoozed' ? escapeWow(firstLine(last, 160)) : undefined,
+        // Still running while it waits (on its subagent, say): the player can stop or steer it.
+        run: s === 'waiting' && running ? true : undefined,
       };
     });
     for (const p of t3.projects.values()) {
