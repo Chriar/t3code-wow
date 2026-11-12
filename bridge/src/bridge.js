@@ -724,11 +724,27 @@ export class Bridge {
     return v.inflight;
   }
 
+  // A thread whose own run is over while its child threads still run is waiting on
+  // them, as in T3 Code's sidebar. T3 Code doesn't say so on the thread itself.
+  statusOf(t) {
+    const s = threadStatus(t);
+    return s === 'open' && this.busyKids(t) ? 'waiting' : s;
+  }
+
+  busyKids(t) {
+    const id = this.t3.split(t.id).id;
+    let n = 0;
+    for (const k of this.t3.threads.values()) {
+      if (k._env === t._env && k.lineage?.parentThreadId === id && (isRunning(k) || waitingOn(k))) n++;
+    }
+    return n;
+  }
+
   onT3Change(ev) {
     if (ev.kind === 'thread') {
       const t = ev.thread;
-      const status = threadStatus(t);
-      const before = ev.prev ? threadStatus(ev.prev) : this.prevStatus.get(t.id);
+      const status = this.statusOf(t);
+      const before = ev.prev ? this.statusOf(ev.prev) : this.prevStatus.get(t.id);
       this.prevStatus.set(t.id, status);
       if (t.id === this.client?.view) this.refreshView(t.id);
       else if (ACTIVE.has(status)) this.refreshView(t.id);
@@ -745,7 +761,7 @@ export class Bridge {
     } else {
       if (ev.kind === 'snapshot') {
         for (const t of this.t3.threads.values()) {
-          this.prevStatus.set(t.id, threadStatus(t));
+          this.prevStatus.set(t.id, this.statusOf(t));
           if (ACTIVE.has(threadStatus(t))) this.refreshView(t.id);
         }
       }
@@ -809,7 +825,7 @@ export class Bridge {
     const projects = [];
     const usedProjects = new Set();
     let threads = [...t3.threads.values()]
-      .map((t) => ({ t, s: threadStatus(t) }))
+      .map((t) => ({ t, s: this.statusOf(t) }))
       // Subagent threads only while they're busy, like T3's own sidebar.
       .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s) || s === 'waiting'));
     threads.sort((a, b) => ORDER[a.s] - ORDER[b.s] || Date.parse(b.t.updatedAt) - Date.parse(a.t.updatedAt));
@@ -822,7 +838,10 @@ export class Bridge {
       let label;
       if (s === 'working') label = activityLabel(proj) || (t.status === 'queued' ? 'Queued' : 'Working');
       else if (s === 'input') label = t.pendingRuntimeRequest?.kind === 'user_input' ? 'Needs your answer' : 'Needs your approval';
-      else if (s === 'waiting') label = waitingOn(t);
+      else if (s === 'waiting') {
+        const n = this.busyKids(t);
+        label = waitingOn(t) || `Waiting on ${n} subagent${n === 1 ? '' : 's'}`;
+      }
       else if (s === 'plan') label = 'Plan ready';
       else if (s === 'failed') label = t.lastError ? `Failed: ${String(t.lastError).slice(0, 60)}` : 'Failed';
       else if (s === 'snoozed') label = 'Snoozed';
