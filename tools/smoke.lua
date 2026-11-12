@@ -691,7 +691,8 @@ do
 	ShowFamily(ChildFamily(5))
 	check(bar.Up:IsShown() and bar.Up:IsEnabled() and not bar.Kids:IsShown(), "a subagent's bar links to its parent")
 	check(plain(bar.Up.Text:GetText()) == "Started by: Refactor the slot writer" and plain(bar.Up.Status:GetText()) == "Working", "Up names the parent and its status")
-	check(f.Subtitle:GetText() == "Child 5" and hdr.Action:IsShown(), "the child's header fills in from its own row")
+	check(f.Subtitle:GetText() == "Child 5" and hdr.Text:GetText():find("Settled", 1, true), "the child's header fills in from its own row")
+	check(not hdr.Action:IsShown() and not hdr.Snooze:IsShown() and not hdr.Archive:IsShown() and not hdr.Model:IsShown() and not hdr.Effort:IsShown(), "a subagent's header has no Settle, Snooze or model picker: the thread that started it runs it")
 	bar.Up:Click()
 	check(ns.viewId == FAMILY_PARENT and f.Subtitle:GetText() == "Refactor the slot writer", "Up opens the parent, its title shown at once from the family held")
 	check(plain(hdr.Text:GetText()) == "Working  ·  Loading…", "with its status, loading: " .. plain(hdr.Text:GetText()))
@@ -724,7 +725,8 @@ do
 	check(G.capturing, "the controller drives the window")
 	local grandkids = { { id = "thread:grandchild", t = "Grandchild", s = "open", k = "sub" } }
 	ns.Main:SelectThread(KidId(7))
-	ShowFamily(ChildFamily(7, nil, grandkids))
+	ShowFamily(ChildFamily(7, { id = FAMILY_PARENT, t = "Refactor the slot writer", s = "working", k = "fork" }, grandkids))
+	check(hdr.Action:IsShown(), "a fork keeps its own Settle")
 	G:Highlight(hdr.Action)
 	down(f, "PADDDOWN")
 	check(G.selected == bar.Up, "Down from Settle goes to Up")
@@ -769,6 +771,8 @@ do
 	check(ns.viewId == KidId(31) and G.selected == ns.Main.composer, "A opens that child, and the list closing doesn't pull the cursor off the message box")
 	ShowFamily(ChildFamily(31))
 	check(G.selected == bar.Up, "once the child's bar shows, the cursor is on Up, the way back")
+	down(f, "PADDUP")
+	check(G.selected == bar.Up, "on a subagent the bar is the top of the column")
 
 	down(f, "PAD1")
 	down(f, "PADDDOWN")

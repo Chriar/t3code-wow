@@ -812,17 +812,22 @@ function M:Refresh()
 		header.Project:Hide()
 		f.Bar.Send:SetText("Send")
 		if t then
+			-- A subagent is run by the thread that started it, as in T3 Code, so it has
+			-- no Settle, Snooze or model of its own to pick here.
+			local fam = ns.Store:Family()
+			local subagent = fam and fam.up and fam.up.k == "sub" or false
 			f.Subtitle:SetText(t.title)
 			header.Text:SetText(self:HeaderText(t))
-			header.Action:SetShown(true)
+			header.Action:SetShown(not subagent)
 			header.Action:SetText(t.s == "settled" and "Reopen" or "Settle")
-			header.Archive:SetShown(t.s == "settled")
+			header.Archive:SetShown(not subagent and t.s == "settled")
 			-- Snooze shares Archive's place: a settled thread is archived, any other
 			-- snoozed. Without presets from the bridge there's nothing to offer.
-			local snoozable = t.s ~= "settled" and (t.s == "snoozed" or #self:SnoozeOptions() > 0)
+			local snoozable = not subagent and t.s ~= "settled" and (t.s == "snoozed" or #self:SnoozeOptions() > 0)
 			header.Snooze:SetShown(snoozable)
 			header.Snooze:SetText(t.s == "snoozed" and "Wake" or "Snooze")
-			local withModel = self:SetupModelDropdown()
+			local withModel = not subagent and self:SetupModelDropdown()
+			if not withModel then header.Model:Hide() end
 			local withEffort = withModel and self:SetupEffortDropdown()
 			if not withEffort then header.Effort:Hide() end
 			header.Model.tipBody = "The model for this thread. A change applies from the next reply on."
@@ -833,7 +838,8 @@ function M:Refresh()
 			header.Model:ClearAllPoints()
 			header.Model:SetPoint("RIGHT", withEffort and header.Effort or anchor, "LEFT", -4, 0)
 			local pickers = (withModel and header.Model:GetWidth() + 4 or 0) + (withEffort and header.Effort:GetWidth() + 4 or 0)
-			header.Text:SetPoint("RIGHT", ((t.s == "settled" or snoozable) and -200 or -110) - pickers, 0)
+			local buttons = subagent and 6 or ((t.s == "settled" or snoozable) and 200 or 110)
+			header.Text:SetPoint("RIGHT", -buttons - pickers, 0)
 			local busy = ns.db.settings.steerFollowUps and "Steer the agent" or "Queue a follow-up"
 			self:SetPlaceholder((t.s == "working" and busy or "Message the agent") .. "  (Shift+Enter for a new line)")
 		else
