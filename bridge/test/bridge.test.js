@@ -753,6 +753,19 @@ test('a thread waiting on a watched PR or another thread is waiting, not open', 
   assert.equal(waitingOn({ ...t, status: 'running', activityRunStatus: 'running' }), null);
 });
 
+test('a thread waiting on its subagent or a background task is waiting, as in T3 Code', async () => {
+  const { threadStatus, waitingOn } = await import('../src/t3.js');
+  // The shape T3 Code sends: subagent and background tasks carry no awaited flag.
+  const subagent = { taskId: 'a1', description: 'Build bridge half', kind: 'subagent', providerInstanceId: 'claudeAgent' };
+  const t = { status: 'completed', pendingBackgroundTasks: [subagent] };
+  assert.equal(threadStatus(t), 'waiting');
+  assert.equal(waitingOn(t), 'Build bridge half');
+  assert.equal(threadStatus({ ...t, pendingBackgroundTasks: [{ taskId: 'b', kind: 'background_task' }] }), 'waiting');
+  assert.equal(threadStatus({ ...t, pendingBackgroundTasks: [{ taskId: 'c', kind: 'command' }] }), 'open', 'a background command is not waited on');
+  assert.equal(threadStatus({ ...t, pendingBackgroundTasks: [{ taskId: 'm', kind: 'monitor' }] }), 'open', 'nor is a monitor nobody awaits');
+  assert.equal(threadStatus({ ...t, status: 'failed' }), 'failed', 'a failed run shows as failed, not waiting');
+});
+
 test('a waiting thread is listed with what it waits for, timed from the end of its last run', () => {
   const { b } = fakeBridge();
   b.t3.threads.set('pr-watch', { id: 'pr-watch', title: 'Watch', projectId: 'p1', status: 'completed', updatedAt: new Date().toISOString(),
