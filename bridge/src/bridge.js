@@ -1234,7 +1234,7 @@ export class Bridge {
       version: VERSION,
       pid: process.pid,
       at: new Date().toISOString(),
-      t3: { state: this.t3.state, error: this.t3.error, threads: this.t3.threads.size, origin: this.t3.origin, environments: this.t3.environments() },
+      t3: { state: this.t3.state, error: this.t3.error, threads: [...this.t3.threads.values()].filter((t) => !t.lineage?.parentThreadId).length, origin: this.t3.origin, environments: this.t3.environments() },
       wow: this.proc ? { pid: this.proc.pid } : null,
       capture: { state: this.captureState, backend: this.capture.resolveBackend(), ...this.capture.stats, lastError: this.capture.lastError },
       addon: this.client
