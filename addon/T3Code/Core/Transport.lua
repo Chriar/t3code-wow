@@ -297,7 +297,7 @@ end
 -- A command that can't fit in a frame next to the hello would never go, and would
 -- hold up every command queued after it, so it's refused here. The hello grows after
 -- a command is queued (a thread picked, its hashes filled in), so leave room for that.
-local HELLO_GROWTH = 96
+local HELLO_GROWTH = 113
 
 function T:Send(verb, ...)
 	local db = ns.db
@@ -329,12 +329,13 @@ end
 function T:Hello()
 	local db = ns.db
 	-- Without keys, only a bare hello (no thread id) so the bridge sends them.
-	return Codec.Record({
+	local fields = {
 		"H", 1, db.session, ns.ui, self.slotCursor, db.sigNext or 1, db.gen or 0,
 		self:Flags(), link and ns.viewId or "", ns.version, self.slotCount,
-		ns.Store.modelsHash or "", link and ns.Store.listKey or "", link and ns.Store.projectsKey or "",
-		link and ns.Store.viewKey or "",
-	})
+		ns.Store.modelsHash or "", link and ns.Store.listKey or "",
+	}
+	for _, part in ipairs(ns.Store.PARTS) do table.insert(fields, link and ns.Store[part.key] or "") end
+	return Codec.Record(fields)
 end
 
 function T:Payload()

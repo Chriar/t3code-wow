@@ -77,14 +77,14 @@ so a border or scaling quirk doesn't break it.
 The payload is records separated by `RS` (0x1E), with fields separated by `US` (0x1F):
 
 ```
-H  1  session  ui  nextSlot  sigNext  gen  flags  viewThreadId  addonVersion  slotCount  modelsHash  listHash  projectsHash  viewHash
+H  1  session  ui  nextSlot  sigNext  gen  flags  viewThreadId  addonVersion  slotCount  modelsHash  listHash  projectsHash  viewHash  familyHash
 C  id  verb  args…                      (one per queued command)
 ```
 
 - `session` is persistent (SavedVariables). `ui` is new every load, so the bridge can
   tell a `/reload` happened.
 - `modelsHash` is the hash of the model list the addon holds (empty until it has one). The bridge sends the list, several KB, only while this differs from its own, so it costs one publish after a `/reload` or a change in T3 Code instead of every publish.
-- `listHash`, `projectsHash` and `viewHash` are the hashes of the thread list, the project list and the transcript the addon holds (empty until it has one). The bridge leaves the project list and the transcript (up to 60 KB) out of a publish while they still match, and names them in the snapshot's `same` field so the addon keeps them. Only a part the snapshot actually carried is recorded, and the bridge stops trusting a hash as soon as it publishes a different part, so a part can be repeated but never dropped.
+- `listHash`, `projectsHash`, `viewHash` and `familyHash` are the hashes of the thread list, the project list, the transcript and the open thread's family the addon holds (empty until it has one). The bridge leaves the project list, the transcript (up to 60 KB) and the family out of a publish while they still match, and names them in the snapshot's `same` field (`p`, `v`, `f`) so the addon keeps them. Only a part the snapshot actually carried is recorded, and the bridge stops trusting a hash as soon as it publishes a different part, so a part can be repeated but never dropped. `PARTS` in `bridge.js` and `Store.PARTS` in the addon list these parts in the hello's order.
 - `flags`:
   - `o`: window open
   - `t`: tracker on
@@ -137,10 +137,11 @@ A publish works like this:
    question or approval, usage, bridge status, command results and the ack. The
    model list rides along only when the addon's `modelsHash` is out of date.
    It is grouped per machine and provider, and each model points at one of a few shared sets of reasoning levels instead of carrying its own. Threads carry their reasoning level (`re`), projects the level their default model uses (`de`).
+   The open thread's family (`fam`) is a part of its own. `up` is the thread it came from: the thread that started a subagent, a fork's source, a side chat's thread, or the thread on another machine that sent it here. `kids` are the threads it started, in the order they started. Each carries a title, a status, its kind (`sub`, `fork`, `side`, `sent`) and its machine when that's another one. A sender on a machine the bridge doesn't know has no id, so the game shows it but can't open it. When the open thread isn't in the list (an idle subagent), `me` carries its list row, so the window still has its header. The family leaves out activity, message text and update times, so it only changes when a relative's title or status does, or a relative comes or goes. It's absent when there's nothing to show.
 2. Write it to the slots the addon will load next (from its last confirmed position
    to a little past the bridge's prediction) and to slots 1–3 (what a `/reload`
    bootstraps from). Slots 1–3 always carry the complete snapshot; the others leave
-   out the transcript and the project list when the addon's hello says it has them.
+   out the transcript, the project list and the family when the addon's hello says it has them.
 3. Ring the next **bell**.
 
 **Bells (the "new update" signal).** Measured on this client:

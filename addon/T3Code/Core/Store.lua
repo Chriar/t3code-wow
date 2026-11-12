@@ -16,8 +16,18 @@ local Store = {
 	listKey = "",
 	projectsKey = "",
 	viewKey = "",
+	familyKey = "",
 }
 ns.Store = Store
+
+-- The parts a snapshot may leave out while we hold them, in the order the hello reports
+-- their hashes (after listKey). `letter` names a part in the snapshot's `x` and `same`;
+-- `key` is where we keep the hash we hold. The bridge's PARTS lists the same, in order.
+Store.PARTS = {
+	{ field = "projects", letter = "p", key = "projectsKey" },
+	{ field = "view", letter = "v", key = "viewKey" },
+	{ field = "fam", letter = "f", key = "familyKey" },
+}
 
 -- As T3 Code's sidebar: a thread that needs you (an answer, an approval, a plan to
 -- review) is listed with Open at the top, and Working holds only what's running or
@@ -32,16 +42,19 @@ Store.GROUP_OF = GROUP_OF
 
 function Store:Apply(data)
 	local prev = self.data
-	-- A snapshot may leave out the transcript (60 KB) and the project list when the
-	-- bridge knows, from our hello, that we already hold them. `same` names the parts
-	-- it left out; a part that is neither sent nor named is empty now (no thread
-	-- selected, no projects). Keeping the old table costs nothing: the next full
-	-- snapshot replaces it.
+	-- A snapshot may leave out the transcript (60 KB), the project list and the open
+	-- thread's family when the bridge knows, from our hello, that we already hold them.
+	-- `same` names the parts it left out; a part that is neither sent nor named is empty
+	-- now (no thread selected, no projects). Keeping the old table costs nothing: the
+	-- next full snapshot replaces it.
 	local same = type(data.same) == "string" and data.same or ""
-	local sentProjects, sentView = data.projects ~= nil, data.view ~= nil
+	local sent = {}
+	for _, part in ipairs(Store.PARTS) do
+		sent[part.field] = data[part.field] ~= nil
+		if not sent[part.field] and same:find(part.letter, 1, true) then data[part.field] = prev[part.field] end
+	end
 	data.threads = data.threads or {}
-	data.projects = data.projects or (same:find("p", 1, true) and prev.projects) or {}
-	if not data.view and same:find("v", 1, true) then data.view = prev.view end
+	data.projects = data.projects or {}
 	data.usage = data.usage or {}
 	data.bridge = data.bridge or {}
 	local before = self.byId
@@ -55,20 +68,18 @@ function Store:Apply(data)
 		-- hash describes what it sent, and a part it left out is still the old one.
 		-- A part that was neither sent nor kept is gone, so claim nothing for it.
 		self.listKey = data.x.l ~= nil and tostring(data.x.l) or self.listKey
-		if sentProjects then
-			self.projectsKey = tostring(data.x.p or "")
-		elseif not same:find("p", 1, true) then
-			self.projectsKey = ""
-		end
-		if sentView then
-			self.viewKey = tostring(data.x.v or "")
-		elseif not same:find("v", 1, true) then
-			self.viewKey = ""
+		for _, part in ipairs(Store.PARTS) do
+			if sent[part.field] then
+				self[part.key] = tostring(data.x[part.letter] or "")
+			elseif not same:find(part.letter, 1, true) then
+				self[part.key] = ""
+			end
 		end
 	else
 		-- An older bridge sends everything in every snapshot, so a new one is a new
-		-- version of both parts.
-		self.listKey, self.projectsKey, self.viewKey = "gen:" .. self.applied, "gen:" .. self.applied, "gen:" .. self.applied
+		-- version of every part.
+		self.listKey = "gen:" .. self.applied
+		for _, part in ipairs(Store.PARTS) do self[part.key] = "gen:" .. self.applied end
 	end
 	if type(data.models) == "table" and type(data.models.g) == "table" then
 		-- Flattened per machine, in T3's order: { i, s, l, p = provider, r = levels }.
@@ -100,8 +111,30 @@ function Store:Apply(data)
 	if data.view and data.view.id == ns.viewId then ns:Fire("ViewChanged") end
 end
 
+-- A thread's list row, else the open thread's own row, which the bridge sends with its
+-- family when the list leaves it out (an idle subagent, say).
 function Store:Thread(id)
-	return id and self.byId[id]
+	if not id then return nil end
+	local fam = self.data.fam
+	return self.byId[id] or (fam and fam.id == id and fam.me) or nil
+end
+
+-- The open thread's family: { id, me?, up?, kids? }, or nil when the bridge hasn't sent
+-- one for the thread on screen.
+function Store:Family()
+	local fam = self.data.fam
+	if fam and fam.id == ns.viewId then return fam end
+end
+
+-- A relative in the family we hold, { id, t, s?, k, env? }: what the header shows for
+-- it right after it's opened, before its own snapshot arrives.
+function Store:Relative(id)
+	local fam = self.data.fam
+	if not id or not fam then return nil end
+	if fam.up and fam.up.id == id then return fam.up end
+	for _, kid in ipairs(fam.kids or {}) do
+		if kid.id == id then return kid end
+	end
 end
 
 function Store:ProjectName(id)

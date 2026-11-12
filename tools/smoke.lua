@@ -573,6 +573,32 @@ down(f, "PAD2")
 check(not f._shown, "B closes the window")
 check(not ns.Gamepad.capturing, "controller released on close")
 
+-- The open thread's family is a snapshot part of its own, like the transcript: kept
+-- while `same` names it, recorded only when it was sent, and reported in the hello.
+do
+	local Store = ns.Store
+	local savedView, savedFam = ns.viewId, data.fam
+	ns.viewId = data.threads[1].id
+	local fam = { id = ns.viewId, kids = { { id = "kid-1", t = "A child", s = "working", k = "sub" } } }
+	local function apply(part)
+		data.gen = data.gen + 1
+		part.gen, part.threads, part.bridge, part.usage = data.gen, data.threads, data.bridge, data.usage
+		part.ack = { ui = ns.ui, seq = ns.Transport.stripSeq }
+		ns.Transport:Apply(part)
+	end
+	apply({ x = { l = "L1", p = "P1", v = "V1", f = "F1" }, projects = data.projects, view = data.view, fam = fam })
+	check(Store.familyKey == "F1" and Store:Family() == fam, "the addon records the family it was sent")
+	apply({ same = "pvf", x = { l = "L2", p = "P2", v = "V2", f = "F2" } })
+	check(Store:Family() == fam and Store.familyKey == "F1", "an omitted family is kept, under the hash it came with")
+	local tail = "\031V1\031F1"
+	check(ns.Transport:Hello():sub(-#tail) == tail, "the hello ends with the family's hash, after the transcript's")
+	apply({ same = "pv", x = { l = "L3", p = "P1", v = "V1", f = "" } })
+	check(Store.data.fam == nil and Store.familyKey == "", "a family neither sent nor kept is gone, and its hash isn't claimed")
+	ns.viewId, data.fam = savedView, savedFam
+	data.gen = data.gen + 1
+	ns.Transport:Apply(data)
+end
+
 -- Launching without a keyboard
 check(ns.Launcher.chord == "PADLTRIGGER-PADRTRIGGER-PADBACK", "controller shortcut: both triggers + Back")
 check(next(Stub.overrides) == nil, "no key bindings overridden (Forever's controller mode ignores them)")
