@@ -171,6 +171,38 @@ export function modelKey(instanceId, model) {
   return `${instanceId}\t${model}`;
 }
 
+// A description on one line, cut to fit a row of the game's suggestion list.
+function oneLine(text, max = 70) {
+  const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+  const chars = Array.from(flat);
+  return chars.length > max ? chars.slice(0, max - 1).join('').trimEnd() + '…' : flat;
+}
+
+// What the game suggests when the player types "/" or "$" in the message box, as T3
+// Code's own composer inserts it: each slash command as "/name", then each skill as
+// "$name". A skill that is also a slash command (Claude lists its skills as both) is
+// offered once, as the command. Disabled skills and those the player can't invoke
+// are left out.
+export function commandList(provider) {
+  const out = [];
+  const seen = new Set();
+  const add = (prefix, name, description) => {
+    name = typeof name === 'string' ? name.trim() : '';
+    if (!name || /\s/.test(name) || seen.has(name)) return;
+    seen.add(name);
+    const entry = { t: escapeWow(prefix + name) };
+    const d = oneLine(description);
+    if (d) entry.d = escapeWow(d);
+    out.push(entry);
+  };
+  for (const c of provider?.slashCommands || []) add('/', c?.name, c?.description);
+  for (const s of provider?.skills || []) {
+    if (!s || s.enabled === false || s.userInvocable === false) continue;
+    add('$', s.name, s.shortDescription || s.description);
+  }
+  return out;
+}
+
 export function parseFrame(payload) {
   const records = payload.toString('utf8').split(RS).map((r) => r.split(US));
   const out = { hello: null, commands: [] };
@@ -952,8 +984,9 @@ export class Bridge {
 
   // Every machine's model list for the game's model picker, with a short hash the
   // addon reports back in its hello. Per machine (`e`): its providers (`p`), each
-  // with its models, and the distinct sets of reasoning levels (`x`) those models
-  // point at by 1-based index (`r`), since most models of a provider share one.
+  // with its models and the commands and skills the message box suggests (`c`), and
+  // the distinct sets of reasoning levels (`x`) those models point at by 1-based
+  // index (`r`), since most models of a provider share one.
   modelsSection() {
     const groups = this.t3
       .modelGroups()
@@ -970,7 +1003,12 @@ export class Bridge {
             if (!sets.has(key)) sets.set(key, x.push(set));
             r = sets.get(key);
           }
-          if (!providers.has(c.instanceId)) providers.set(c.instanceId, { i: c.instanceId, n: escapeWow(c.provider.replace(/\s+/g, ' ').trim()), m: [] });
+          if (!providers.has(c.instanceId)) {
+            const provider = { i: c.instanceId, n: escapeWow(c.provider.replace(/\s+/g, ' ').trim()), m: [] };
+            const commands = commandList((g.providers || []).find((p) => p?.instanceId === c.instanceId));
+            if (commands.length) provider.c = commands;
+            providers.set(c.instanceId, provider);
+          }
           providers.get(c.instanceId).m.push({ s: c.model, l: escapeWow(c.name), r });
         }
         return { e: g.code, x, p: [...providers.values()] };

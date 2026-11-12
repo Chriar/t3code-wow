@@ -222,8 +222,9 @@ export class Fleet extends EventEmitter {
     return env.client.defaultModelFor(id);
   }
 
-  // Each machine's models, keyed by its id prefix ('' for this one).
+  // Each machine's models, keyed by its id prefix ('' for this one), and the
+  // providers they came from (for their slash commands and skills).
   modelGroups() {
-    return this.envs.map((env) => ({ code: env.code, choices: modelChoices(env.client.config?.providers) }));
+    return this.envs.map((env) => ({ code: env.code, choices: modelChoices(env.client.config?.providers), providers: env.client.config?.providers || [] }));
   }
 }

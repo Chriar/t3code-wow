@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan } from '../src/bridge.js';
+import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan, commandList } from '../src/bridge.js';
 import { holdOpen } from './hold-open.mjs';
 import { SlotBank, FileInUse, LONG_SILENT_WAV } from '../src/slots.js';
 import { luaValue } from '../src/luaser.js';
@@ -250,6 +250,52 @@ test('the model list is only sent while the addon reports a different one', () =
   assert.ok(b.buildSnapshot().models, 'a changed list goes out again');
   for (const p of b.t3.local.client.config.providers) p.enabled = false;
   assert.deepEqual(b.buildSnapshot().models.g, [], 'switching off the last provider clears the list');
+  b.stop();
+});
+
+test('the message box suggests each slash command once, then the skills the player can run', () => {
+  const list = commandList({
+    slashCommands: [
+      { name: 'compact', description: 'Summarize the conversation' },
+      { name: 'review', description: 'Review | the diff' },
+      { name: 'not a name', description: 'spaces' },
+    ],
+    skills: [
+      { name: 'review', description: 'Also a slash command' },
+      { name: 'deploy', shortDescription: 'Ship it', description: 'A much longer description of shipping it' },
+      { name: 'off', description: 'Switched off', enabled: false },
+      { name: 'auto', description: 'Only the agent runs it', userInvocable: false },
+      { name: 'wordy', description: `First line\n\n  second   line ${'x'.repeat(100)}` },
+      { name: 'quiet' },
+    ],
+  });
+  assert.deepEqual(list.map((c) => c.t), ['/compact', '/review', '$deploy', '$wordy', '$quiet']);
+  assert.equal(list[1].d, 'Review || the diff', 'escaped for the game');
+  assert.equal(list[2].d, 'Ship it', 'the short description when there is one');
+  assert.equal(list[3].d.includes('\n'), false);
+  assert.ok(list[3].d.startsWith('First line second line x'));
+  assert.equal(Array.from(list[3].d).length, 70);
+  assert.ok(list[3].d.endsWith('…'));
+  assert.equal(list[4].d, undefined, 'no description, no field');
+  assert.deepEqual(commandList(undefined), []);
+});
+
+test('each provider in the model list carries its own commands and skills', () => {
+  const { b } = fakeBridge();
+  b.t3.local.client.config = {
+    providers: [
+      { instanceId: 'codex', displayName: 'Codex', enabled: true, models: [{ slug: 'a', name: 'A' }], slashCommands: [{ name: 'status', description: 'Show status' }], skills: [{ name: 'lint', description: 'Lint' }] },
+      { instanceId: 'claude', displayName: 'Claude', enabled: true, models: [{ slug: 'o', name: 'O' }] },
+    ],
+  };
+  b.onFrame(frame(1, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0', '8']]));
+  const first = b.buildSnapshot().models;
+  const [codex, claude] = first.g[0].p;
+  assert.deepEqual(codex.c, [{ t: '/status', d: 'Show status' }, { t: '$lint', d: 'Lint' }]);
+  assert.equal('c' in claude, false, 'a provider with none sends none');
+  b.onFrame(frame(2, [['H', 1, 'sess', 'ui1', 1, 1, 0, 'o', '', '0.1.0', '8', first.h]]));
+  b.t3.local.client.config.providers[0].skills.push({ name: 'fmt' });
+  assert.ok(b.buildSnapshot().models, 'a new skill sends the list again');
   b.stop();
 });
 
