@@ -3,7 +3,8 @@
 // Thread and project ids are made unique across machines: the local machine keeps
 // raw ids (so existing views and saved state stay valid), other machines' ids get
 // a short prefix ("e1~<id>"). Every thread/project object handed out is a shallow
-// copy with `id`/`projectId` rewritten and `_env` pointing at its machine.
+// copy with `id`/`projectId` and the lineage ids rewritten, `_env` pointing at its
+// machine and `_from` saying which thread it came from (see `from`).
 
 import { EventEmitter } from 'node:events';
 import { T3Client, modelChoices } from './t3.js';
@@ -18,6 +19,8 @@ export class Fleet extends EventEmitter {
     this.envs = [];
     this.threads = new Map();
     this.projects = new Map();
+    // This machine's T3 environment id, known once its config arrives.
+    this.localEnvironmentId = null;
     const local = { code: '', id: 'local', label: 'local', local: true };
     local.client = new T3Client({ tokenProvider: localTokens, log, label: 'local' });
     local.tokens = localTokens;
@@ -51,7 +54,28 @@ export class Fleet extends EventEmitter {
   }
 
   wrapThread(env, t) {
-    return { ...t, id: this.key(env, t.id), projectId: this.key(env, t.projectId), _env: env };
+    const lineage = t.lineage && {
+      ...t.lineage,
+      parentThreadId: t.lineage.parentThreadId ? this.key(env, t.lineage.parentThreadId) : t.lineage.parentThreadId,
+      rootThreadId: t.lineage.rootThreadId ? this.key(env, t.lineage.rootThreadId) : t.lineage.rootThreadId,
+    };
+    return { ...t, id: this.key(env, t.id), projectId: this.key(env, t.projectId), lineage, _env: env, _from: this.from(env, t) };
+  }
+
+  // The thread `t` came from, as { key, kind, env, title }: the thread it forked off
+  // or was started by on its own machine, else the one another machine sent it from.
+  // `key` is null for a sender on a machine this bridge doesn't know. `forkedFrom`
+  // isn't used: for subagents it names a node in the parent's turn, not a thread.
+  from(env, t) {
+    const parent = t.lineage?.parentThreadId;
+    if (parent) {
+      const kind = t.lineage.sideChat ? 'side' : t.lineage.relationshipToParent === 'fork' ? 'fork' : 'sub';
+      return { key: this.key(env, parent), kind, env };
+    }
+    const sent = t.delegatedFrom;
+    if (!sent) return null;
+    const sender = sent.environmentId ? this.envs.find((e) => (e.local ? this.localEnvironmentId : e.id) === sent.environmentId) : undefined;
+    return { key: sender ? this.key(sender, sent.threadId) : null, kind: 'sent', env: sender, title: sent.title };
   }
 
   wrapProject(env, p) {
@@ -78,7 +102,18 @@ export class Fleet extends EventEmitter {
       this.emit('state', this.state, this.error, env);
     });
     c.on('unauthorized', () => env.tokens.invalidate?.());
-    c.on('config', () => this.emit('config', env));
+    c.on('config', () => {
+      const id = env.local && c.config?.environment?.environmentId;
+      if (id && id !== this.localEnvironmentId) {
+        // Threads sent from this machine name it by this id, which can arrive after them.
+        this.localEnvironmentId = id;
+        for (const [k, t] of this.threads) {
+          const raw = t.delegatedFrom && t._env.client.threads.get(this.split(k).id);
+          if (raw) this.threads.set(k, this.wrapThread(t._env, raw));
+        }
+      }
+      this.emit('config', env);
+    });
     c.on('change', (ev) => {
       if (ev.kind === 'thread') {
         const thread = this.wrapThread(env, ev.thread);
