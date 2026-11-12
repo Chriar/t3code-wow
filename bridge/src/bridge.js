@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { RS, US } from './codec.js';
 import { StripCapture } from './capture.js';
 import { SlotBank, replaceFile, FileInUse } from './slots.js';
-import { threadStatus, isUnread, effortOf, waitingOn } from './t3.js';
+import { threadStatus, isUnread, effortOf, waitingOn, isRunning } from './t3.js';
 import { Fleet } from './fleet.js';
 import { tokenProvider } from './auth.js';
 import { snoozeChoices, snoozedUntil, parseCustomSnooze, describeWhen } from './snooze.js';
@@ -811,7 +811,7 @@ export class Bridge {
     let threads = [...t3.threads.values()]
       .map((t) => ({ t, s: threadStatus(t) }))
       // Subagent threads only while they're busy, like T3's own sidebar.
-      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s)));
+      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s) || s === 'waiting'));
     threads.sort((a, b) => ORDER[a.s] - ORDER[b.s] || Date.parse(b.t.updatedAt) - Date.parse(a.t.updatedAt));
     let settled = 0;
     threads = threads.filter(({ s }) => s !== 'settled' || ++settled <= 30).slice(0, 90);
@@ -838,8 +838,8 @@ export class Bridge {
         // A working thread's update time changes with every tool call but isn't shown
         // (the game shows elapsed time), so leave it out to avoid pointless publishes.
         u: s === 'working' ? undefined : sec(t.updatedAt),
-        // Waiting counts from when the last run ended, as in T3's sidebar.
-        st: s === 'waiting' ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
+        // Waiting between runs counts from when the last run ended, as in T3's sidebar.
+        st: s === 'waiting' && !isRunning(t) ? sec(t.latestRunCompletedAt) : sec(t.activityRunStartedAt || t.latestRunStartedAt),
         un: s !== 'settled' && s !== 'snoozed' && isUnread(t) ? true : undefined,
         // When a snoozed thread comes back.
         w: s === 'snoozed' ? sec(t.snoozedUntil) : undefined,

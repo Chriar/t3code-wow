@@ -31,10 +31,10 @@ const WORKING = new Set(['preparing', 'queued', 'starting', 'running', 'waiting'
 export function threadStatus(t, now = Date.now()) {
   if (t.archivedAt || t.deletedAt) return 'archived';
   if (t.pendingRuntimeRequest) return 'input';
-  if (t.activityRunStatus || WORKING.has(t.status)) return 'working';
-  // Between runs but still waiting on something (a watched PR, another thread): T3
+  // Waiting on something (a subagent, a watched PR, another thread), even mid-run: T3
   // lists these as "Waiting" under Working.
   if (waitingOn(t)) return 'waiting';
+  if (isRunning(t)) return 'working';
   // Snoozed until a time still ahead: out of the way until then. A thread that needs
   // an answer or is running shows regardless.
   if (snoozedUntil(t, now)) return 'snoozed';
@@ -49,12 +49,17 @@ export function threadStatus(t, now = Date.now()) {
 // not on a background command or an unawaited monitor.
 const AWAITED_KINDS = new Set(['subagent', 'background_task']);
 
-// What an idle-but-waiting thread is waiting for, or null.
+export function isRunning(t) {
+  return Boolean(t.activityRunStatus) || WORKING.has(t.status);
+}
+
+// What a waiting thread is waiting for, or null. As T3 Code's sidebar: an awaited task
+// makes the thread wait even while its run goes on, unless the run failed, and the
+// thread-wait flag counts only during a run.
 export function waitingOn(t) {
-  if (t.activityRunStatus || WORKING.has(t.status) || t.status === 'failed') return null;
-  const task = (t.pendingBackgroundTasks || []).find((b) => b?.awaited || AWAITED_KINDS.has(b?.kind));
+  const task = t.status !== 'failed' && (t.pendingBackgroundTasks || []).find((b) => b?.awaited || AWAITED_KINDS.has(b?.kind));
   if (task) return task.description || 'Waiting';
-  return t.blockedOnThreadWait ? 'Waiting on another thread' : null;
+  return t.blockedOnThreadWait && (t.activityRunStatus ?? t.status) === 'running' ? 'Waiting on another thread' : null;
 }
 
 export function isUnread(t) {

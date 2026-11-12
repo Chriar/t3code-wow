@@ -747,10 +747,17 @@ test('a thread waiting on a watched PR or another thread is waiting, not open', 
   assert.equal(threadStatus(t), 'waiting');
   assert.equal(waitingOn(t), 'Watching pull request #1');
   assert.equal(threadStatus({ ...t, pendingBackgroundTasks: [{ ...watch, awaited: false }] }), 'open');
-  assert.equal(threadStatus({ status: 'completed', blockedOnThreadWait: true }), 'waiting');
-  assert.equal(threadStatus({ ...t, status: 'running', activityRunStatus: 'running' }), 'working', 'running wins');
+  assert.equal(threadStatus({ ...t, status: 'running', activityRunStatus: 'running' }), 'waiting', 'an awaited task makes a running thread wait, as in T3');
   assert.equal(threadStatus({ ...t, pendingRuntimeRequest: { kind: 'approval' } }), 'input', 'needing the player wins');
-  assert.equal(waitingOn({ ...t, status: 'running', activityRunStatus: 'running' }), null);
+});
+
+test('a running thread blocked on another thread is waiting, as in T3 Code', async () => {
+  const { threadStatus, waitingOn } = await import('../src/t3.js');
+  const t = { status: 'running', activityRunStatus: 'running', blockedOnThreadWait: true };
+  assert.equal(threadStatus(t), 'waiting');
+  assert.equal(waitingOn(t), 'Waiting on another thread');
+  assert.equal(threadStatus({ ...t, blockedOnThreadWait: false }), 'working');
+  assert.equal(threadStatus({ status: 'completed', blockedOnThreadWait: true }), 'open', 'the flag counts only during a run');
 });
 
 test('a thread waiting on its subagent or a background task is waiting, as in T3 Code', async () => {
