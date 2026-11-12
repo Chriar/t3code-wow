@@ -866,6 +866,37 @@ test('the open thread’s family: its children, its parent, and its own header w
   b.stop();
 });
 
+test('a subagent the provider started takes its status from its parent, where T3 Code keeps it', async () => {
+  const { b } = fakeBridge();
+  const now = new Date().toISOString();
+  // The shape T3 Code sends for Claude's own subagents: the subagent's thread stays idle
+  // while it runs, and the parent's projection lists it with its real status.
+  b.t3.local.client.onShell({ kind: 'snapshot', snapshot: { threads: [
+    { id: 'lead', title: 'Lead', projectId: 'p1', status: 'running', activityRunStatus: 'running', createdAt: at(0), updatedAt: now, lineage: lineage(null) },
+    { id: 'kid', title: 'Hold', projectId: 'p1', status: 'idle', creationSource: 'provider', createdAt: at(1), updatedAt: now, lineage: lineage('lead') },
+  ] } });
+  let status = 'running';
+  b.t3.threadProjection = async (id) => ({ messages: [], turnItems: [], runtimeRequests: [], runs: [], subagents: id === 'lead' ? [{ childThreadId: 'kid', status }] : [] });
+
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: 'lead', hashes: {} };
+  await b.refreshView('lead', true);
+  assert.equal(view(b, 'lead').fam.kids[0].s, 'working', 'a running subagent is working, not finished');
+  status = 'failed';
+  await b.refreshView('lead', true);
+  assert.equal(view(b, 'lead').fam.kids[0].s, 'failed');
+  status = 'completed';
+  await b.refreshView('lead', true);
+  assert.equal(view(b, 'lead').fam.kids[0].s, 'open');
+
+  status = 'running';
+  b.views.clear();
+  b.client.view = 'kid';
+  await b.refreshView('kid', true);
+  await b.views.get('lead')?.inflight;
+  assert.equal(view(b, 'kid').fam.me?.s, 'working', 'opening the subagent loads its parent, so its own header is right too');
+  b.stop();
+});
+
 test('a relative on another machine is named with it, and a sender on an unknown machine can’t be opened', () => {
   const { b } = fakeBridge(8, { environments: [{ code: 'e1', id: 'env-laptop', label: 'Laptop | 2', urls: [] }] });
   family(b);
