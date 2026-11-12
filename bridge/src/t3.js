@@ -45,10 +45,14 @@ export function threadStatus(t, now = Date.now()) {
   return 'open';
 }
 
+// T3 Code waits on a subagent or background task even without the awaited flag, but
+// not on a background command or an unawaited monitor.
+const AWAITED_KINDS = new Set(['subagent', 'background_task']);
+
 // What an idle-but-waiting thread is waiting for, or null.
 export function waitingOn(t) {
-  if (t.activityRunStatus || WORKING.has(t.status)) return null;
-  const task = (t.pendingBackgroundTasks || []).find((b) => b?.awaited);
+  if (t.activityRunStatus || WORKING.has(t.status) || t.status === 'failed') return null;
+  const task = (t.pendingBackgroundTasks || []).find((b) => b?.awaited || AWAITED_KINDS.has(b?.kind));
   if (task) return task.description || 'Waiting';
   return t.blockedOnThreadWait ? 'Waiting on another thread' : null;
 }
