@@ -87,7 +87,7 @@ function G:Candidates()
 			if ed.kind == "option" and InsideBox(frame, tbox) then add(frame, tbox, ed) end
 		end)
 		add(main.composer)
-		for _, key in ipairs({ "Refresh", "New", "Back", "Stop", "Mic", "Speak", "Shot", "Send" }) do add(f.Bar[key]) end
+		for _, key in ipairs(main.BAR_KEYS) do add(f.Bar[key]) end
 	elseif main.page == "settings" then
 		for _, cb in ipairs(ns.Settings.checks or {}) do add(cb) end
 		for _, w in ipairs(ns.Settings.controls or {}) do add(w) end
@@ -319,7 +319,7 @@ function G:Zone(cur)
 	if w == main.composer or w == h.Action or w == h.Archive or w == h.Snooze or w == h.Project or w == h.Model or w == h.Effort or cur.box == ns.Transcript.scrollBox then
 		return "convo"
 	end
-	for _, key in ipairs({ "Refresh", "New", "Back", "Stop", "Mic", "Speak", "Shot", "Send" }) do
+	for _, key in ipairs(main.BAR_KEYS) do
 		if w == main.frame.Bar[key] then return "bar", key end
 	end
 end
