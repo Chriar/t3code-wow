@@ -32,9 +32,9 @@ function tempAddons(slots = 8) {
   return dir;
 }
 
-function fakeBridge(slots = 8) {
+function fakeBridge(slots = 8, config = {}) {
   const dir = tempAddons(slots);
-  const b = new Bridge({ addonsDir: dir, config: { slots }, log: () => {}, stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-state-')) });
+  const b = new Bridge({ addonsDir: dir, config: { slots, ...config }, log: () => {}, stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 't3wow-state-')) });
   b.proc = { pid: 1, startTicks: 1 };
   currentKeys = b.stripKeys;
   b.persist = { processKey: '1:1', sigCounter: 1, raised: [], handled: {}, slotGuess: 1, gen: 0 };
@@ -114,6 +114,15 @@ test('parseFrame reads hello and commands', () => {
   assert.equal(f.hello.sig, 9);
   assert.equal(f.hello.view, 'tid');
   assert.deepEqual(f.commands[0], { id: 3, verb: 'send', args: ['tid', 'hi there'] });
+});
+
+test('parseFrame reads the hashes of the parts the addon holds: projects, transcript, then family', () => {
+  const f = parseFrame(Buffer.from(['H', 1, 'sess', 'ui1', 5, 9, 123, 'o', 'tid', '0.1.0', '8', 'mh', 'lh', 'ph', 'vh', 'fh'].join(US)));
+  assert.equal(f.hello.models, 'mh');
+  assert.equal(f.hello.list, 'lh');
+  assert.deepEqual(f.hello.hashes, { projects: 'ph', view: 'vh', fam: 'fh' });
+  const older = parseFrame(Buffer.from(['H', 1, 'sess', 'ui1', 5, 9, 123, 'o', 'tid', '0.1.0', '8', 'mh', 'lh', 'ph', 'vh'].join(US)));
+  assert.equal(older.hello.hashes.fam, '', 'an addon without the family reports none');
 });
 
 test('a publish leaves out what the addon already holds, but slots 1-3 stay complete', needsLua, () => {
@@ -795,4 +804,131 @@ test('running subagent threads are listed, idle ones are not', async () => {
   const ids = b.buildSnapshot().threads.map((t) => t.id);
   assert.ok(ids.includes('busy-kid'), 'a running subagent thread is listed');
   assert.ok(!ids.includes('idle-kid'), 'an idle one is not');
+});
+
+const at = (min) => new Date(Date.UTC(2026, 10, 1, 0, min)).toISOString();
+
+function lineage(parent, relationship = 'subagent') {
+  return { parentThreadId: parent, relationshipToParent: parent ? relationship : null, rootThreadId: parent || 'lead' };
+}
+
+// A lead thread with an idle and a busy subagent, delivered as T3 Code's shell.
+function family(b) {
+  const now = new Date().toISOString();
+  const shell = (threads) => b.t3.local.client.onShell({ kind: 'snapshot', snapshot: { threads } });
+  shell([
+    { id: 'lead', title: 'Lead | the work', projectId: 'p1', status: 'completed', createdAt: at(0), updatedAt: now, lineage: lineage(null) },
+    { id: 'idle', title: 'A | b' + 'c'.repeat(100), projectId: 'p1', status: 'completed', createdAt: at(1), updatedAt: now, latestRunCompletedAt: at(9), lineage: lineage('lead') },
+    { id: 'busy', title: 'Busy', projectId: 'p1', status: 'running', activityRunStatus: 'running', activityRunStartedAt: at(3), createdAt: at(2), updatedAt: now, lineage: lineage('lead') },
+  ]);
+  const update = (id, change) => b.t3.local.client.onShell({ kind: 'thread.updated', thread: { ...b.t3.local.client.threads.get(id), ...change } });
+  return { update };
+}
+
+function view(b, id) {
+  b.client = { session: 'sess', ui: 'ui1', ackedSeq: -1, flags: 'o', view: id, hashes: {} };
+  return b.buildSnapshot();
+}
+
+test('the open thread’s family: its children, its parent, and its own header when the list leaves it out', () => {
+  const { b } = fakeBridge();
+  family(b);
+  const long = 'A || b' + 'c'.repeat(75);
+
+  const lead = view(b, 'lead');
+  assert.deepEqual(lead.fam, {
+    id: 'lead',
+    me: undefined,
+    up: undefined,
+    kids: [
+      { id: 'idle', t: long, s: 'open', k: 'sub', env: undefined },
+      { id: 'busy', t: 'Busy', s: 'working', k: 'sub', env: undefined },
+    ],
+  }, 'children in start order; a title is cut to 80 characters, then escaped');
+
+  const idle = view(b, 'idle');
+  assert.ok(!idle.threads.some((t) => t.id === 'idle'), 'an idle subagent is not listed');
+  assert.deepEqual(idle.fam.up, { id: 'lead', t: 'Lead || the work', s: 'open', k: 'sub', env: undefined });
+  assert.equal(idle.fam.kids, undefined);
+  const me = idle.fam.me;
+  assert.deepEqual([me.id, me.title, me.p, me.s, me.l], ['idle', 'A || b' + 'c'.repeat(100), 'p1', 'open', 'Finished'], 'the header a list row would give');
+  assert.equal(me.u, Date.parse(at(9)) / 1000, 'aged from the end of its last run');
+  assert.equal(me.last, undefined);
+
+  const busy = view(b, 'busy');
+  assert.ok(busy.threads.some((t) => t.id === 'busy'), 'a working subagent is listed');
+  assert.equal(busy.fam.me, undefined, 'so it needs no header of its own');
+  assert.equal(busy.fam.up.id, 'lead');
+
+  const lone = view(b, 't1');
+  assert.equal(lone.fam, undefined, 'a listed thread with no relatives has no family part');
+  assert.equal(lone.x.f, '');
+  b.stop();
+});
+
+test('a relative on another machine is named with it, and a sender on an unknown machine can’t be opened', () => {
+  const { b } = fakeBridge(8, { environments: [{ code: 'e1', id: 'env-laptop', label: 'Laptop | 2', urls: [] }] });
+  family(b);
+  b.t3.local.client.onConfig({ type: 'snapshot', config: { environment: { environmentId: 'env-desk', label: 'Desk' } } });
+  const [, laptop] = b.t3.envs;
+  laptop.client.onShell({ kind: 'snapshot', snapshot: { threads: [
+    { id: 'helper', title: 'Helper', projectId: 'lp', status: 'completed', createdAt: at(5), updatedAt: at(6), delegatedFrom: { environmentId: 'env-desk', threadId: 'lead', title: 'Lead' } },
+    { id: 'stray', title: 'Stray', projectId: 'lp', status: 'completed', createdAt: at(5), updatedAt: at(6), delegatedFrom: { environmentId: 'env-gone', threadId: 'x', title: 'From | afar' } },
+  ] } });
+
+  assert.deepEqual(view(b, 'lead').fam.kids.at(-1), { id: 'e1~helper', t: 'Helper', s: 'open', k: 'sent', env: 'Laptop || 2' });
+  assert.deepEqual(view(b, 'e1~helper').fam.up, { id: 'lead', t: 'Lead || the work', s: 'open', k: 'sent', env: 'Desk' });
+  assert.deepEqual(view(b, 'e1~stray').fam.up, { id: undefined, t: 'From || afar', s: undefined, k: 'sent', env: undefined });
+  b.stop();
+});
+
+test('the family part keeps its hash through replies and a child’s tool calls, and a hidden child’s update costs no publish', () => {
+  const { b } = fakeBridge();
+  const { update } = family(b);
+  const leadDetail = { messages: [{ role: 'assistant', text: 'one', createdAt: at(4) }], turnItems: [], runtimeRequests: [], runs: [] };
+  b.views.set('lead', { projection: leadDetail, fetchedAt: Date.now() });
+  const first = view(b, 'lead');
+
+  leadDetail.messages.push({ role: 'assistant', text: 'two', createdAt: at(5) });
+  b.views.set('busy', { projection: { runs: [{ id: 'r' }], turnItems: [{ runId: 'r', type: 'command_execution', status: 'running', input: 'ls' }] }, fetchedAt: Date.now() });
+  update('busy', { updatedAt: new Date(Date.now() + 1000).toISOString() });
+  const later = b.buildSnapshot();
+  assert.notEqual(later.x.v, first.x.v, 'the transcript changed');
+  assert.equal(later.threads.find((t) => t.id === 'busy').l, 'Running ls', 'the child’s activity changed');
+  assert.equal(later.x.f, first.x.f);
+
+  b.t3.on('change', (ev) => b.onT3Change(ev));
+  assert.ok(b.publishNow());
+  update('idle', { updatedAt: new Date(Date.now() + 2000).toISOString(), lastVisitedAt: new Date().toISOString() });
+  assert.equal(b.publishNow(), false, 'a hidden child’s update with nothing shown changed');
+  update('idle', { title: 'Renamed', updatedAt: new Date(Date.now() + 3000).toISOString() });
+  assert.ok(b.publishNow(), 'its new title is shown, so it goes');
+
+  update('idle', { status: 'running', activityRunStatus: 'running', updatedAt: new Date(Date.now() + 4000).toISOString() });
+  assert.notEqual(b.buildSnapshot().x.f, first.x.f, 'a child starting work changes the family');
+  b.stop();
+});
+
+test('the family part is left out of later slots while the addon holds it, never out of slots 1-3', () => {
+  const { b, dir } = fakeBridge();
+  const { update } = family(b);
+  const slot = (i) => fs.readFileSync(path.join(dir, `T3Code_S${String(i).padStart(3, '0')}`, 'Inbox.lua'), 'latin1');
+  const hello = (seq, x = {}) => b.onFrame(frame(seq, [['H', 1, 'sess', 'ui1', 4, 1, b.lastGen, 'o', 'idle', '0.1.0', '8', '', x.l || '', x.p || '', x.v || '', x.f || '']]));
+  hello(1);
+  const first = b.buildSnapshot();
+  assert.ok(b.publishNow('test'));
+  // Its next hello says it applied that snapshot.
+  hello(2, first.x);
+  assert.equal(b.client.hashes.fam, first.x.f);
+  assert.ok(b.publishNow('test'));
+  for (const i of [1, 2, 3]) assert.match(slot(i), /fam=\{id="idle"/, `slot ${i} is complete`);
+  assert.doesNotMatch(slot(4), /fam=/, 'no second copy of the family');
+  assert.match(slot(4), /same="pvf"/);
+
+  // The parent starts a run: the family changed, so the addon's copy is stale.
+  update('lead', { status: 'running', activityRunStatus: 'running', updatedAt: new Date(Date.now() + 1000).toISOString() });
+  assert.ok(b.publishNow('test'));
+  assert.match(slot(4), /fam=\{id="idle"/, 'a changed family is sent');
+  assert.equal(b.client.hashes.fam, null, 'and the old hash is no longer trusted');
+  b.stop();
 });

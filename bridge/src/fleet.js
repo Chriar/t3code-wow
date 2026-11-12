@@ -78,6 +78,10 @@ export class Fleet extends EventEmitter {
     return { key: sender ? this.key(sender, sent.threadId) : null, kind: 'sent', env: sender, title: sent.title };
   }
 
+  label(env) {
+    return env.local ? env.client.config?.environment?.label || 'this computer' : env.label;
+  }
+
   wrapProject(env, p) {
     return { ...p, id: this.key(env, p.id), _env: env };
   }
@@ -170,7 +174,7 @@ export class Fleet extends EventEmitter {
   environments() {
     return this.envs.map((e) => ({
       code: e.code,
-      label: e.local ? e.client.config?.environment?.label || 'this computer' : e.label,
+      label: this.label(e),
       local: e.local || undefined,
       state: e.client.state,
       error: e.client.error || undefined,
