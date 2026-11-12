@@ -162,7 +162,7 @@ function T:Create(parent, header, composer)
 	local inset = UI.Inset(parent)
 	inset:SetPoint("TOPLEFT", header, "BOTTOMLEFT", -2, -4)
 	inset:SetPoint("BOTTOMRIGHT", composer, "TOPRIGHT", 0, 4)
-	self.inset = inset
+	self.inset, self.header, self.top = inset, header, header
 
 	local scrollBox = CreateFrame("Frame", nil, inset, "WowScrollBoxList")
 	scrollBox:SetPoint("TOPLEFT", 4, -4)
@@ -182,6 +182,14 @@ function T:Create(parent, header, composer)
 	self.scrollBox, self.scrollBar, self.view = scrollBox, scrollBar, view
 
 	scrollBox:SetScript("OnSizeChanged", function() T:Relayout() end)
+end
+
+-- What the conversation hangs under: the header, or the family bar while it's shown.
+function T:SetTop(anchor)
+	anchor = anchor or self.header
+	if anchor == self.top then return end
+	self.top = anchor
+	self.inset:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -2, -4)
 end
 
 function T:Relayout()

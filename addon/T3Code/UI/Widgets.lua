@@ -284,7 +284,11 @@ function UI.OpenList(owner)
 	end
 	l.owner = owner
 	l:ClearAllPoints()
-	l:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
+	if owner.listAlignRight then
+		l:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -2)
+	else
+		l:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
+	end
 	l:Show()
 	l.Search:SetText("")
 	UI.RefreshList()

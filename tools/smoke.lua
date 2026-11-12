@@ -635,6 +635,95 @@ do
 	Store.listKey, Store.projectsKey, Store.viewKey, Store.familyKey = saved[1], saved[2], saved[3], saved[4]
 end
 
+-- The family bar: the thread the open one came from, and the threads it started.
+local FAMILY_PARENT = "thread:project:" .. string.rep("p", 36)
+local function KidId(n) return "thread:delegated-task:" .. string.rep("c", 96) .. string.format("-%03d", n) end
+local familyKids = {}
+for n = 1, 31 do
+	familyKids[n] = { id = KidId(n), t = "Child " .. n, s = n == 1 and "input" or (n <= 3 and "working" or "settled"), k = "sub", env = n == 4 and "laptop" or nil }
+end
+local function ParentFamily()
+	local project = ns.Store.data.projects[1].id
+	return { id = FAMILY_PARENT, me = { id = FAMILY_PARENT, title = "Refactor the slot writer", p = project, s = "working", l = "Working", st = time() - 600 }, kids = familyKids }
+end
+local function ChildFamily(n, up, kids)
+	local project = ns.Store.data.projects[1].id
+	return {
+		id = KidId(n),
+		me = { id = KidId(n), title = "Child " .. n, p = project, s = familyKids[n].s, l = "Settled", u = time() - 60 },
+		up = up or { id = FAMILY_PARENT, t = "Refactor the slot writer", s = "working", k = "sub" },
+		kids = kids,
+	}
+end
+local function ShowFamily(fam)
+	data.fam = fam
+	data.view = { id = fam.id, msgs = {} }
+	data.gen = data.gen + 1
+	ns.Transport:Apply(data)
+end
+local savedFamily = { view = ns.viewId, fam = data.fam, data = data.view }
+local bar = ns.Family.bar
+local plain = ns.StripMarkup
+
+do
+	ns.Main:Open()
+	ns.Main:SelectThread(FAMILY_PARENT)
+	check(not f.Subtitle:GetText():find("No thread selected", 1, true), "a thread that isn't loaded yet is never shown as no thread selected")
+	ShowFamily(ParentFamily())
+	check(f.Subtitle:GetText() == "Refactor the slot writer" and hdr.Action:IsShown(), "a thread left out of the list gets its full header from the row sent with its family")
+	check(bar:IsShown() and bar.Kids:IsShown() and not bar.Up:IsShown(), "a thread with children shows the Kids button, and no Up link without a parent")
+	local insetTop
+	for _, pt in ipairs(ns.Transcript.inset._points) do if pt[1] == "TOPLEFT" then insetTop = pt[2] end end
+	check(insetTop == bar, "the conversation hangs under the bar")
+	check(plain(bar.Kids:GetText()) == "Subagents (31) · 1 needs you", "Kids counts the children and how many need you: " .. plain(bar.Kids:GetText()))
+
+	bar.Kids:Click()
+	local l = ns.UI.ListOpen()
+	check(l and l.owner == bar.Kids and #l.Box._rows == 31 and l.Search:IsShown(), "Kids opens the shared list with every child, and its search box")
+	check(plain(l.Box._rows[1].ed.label) == "Needs you  Child 1" and plain(l.Box._rows[4].ed.label) == "Settled  Child 4  · laptop", "each row reads status first, then title, then another machine")
+	l.Box._rows[5].frame:Click()
+	check(ns.viewId == KidId(5) and not l:IsShown(), "clicking a child in the list opens it")
+	check(f.Subtitle:GetText() == "Child 5" and hdr.Text:GetText():find("Loading…", 1, true) and not hdr.Action:IsShown(), "until its snapshot comes, the header shows the child from the family held, loading")
+	check(not bar:IsShown(), "the bar waits for the child's own family")
+	for _, pt in ipairs(ns.Transcript.inset._points) do if pt[1] == "TOPLEFT" then insetTop = pt[2] end end
+	check(insetTop == hdr, "without the bar, the conversation hangs under the header")
+
+	ShowFamily(ChildFamily(5))
+	check(bar.Up:IsShown() and bar.Up:IsEnabled() and not bar.Kids:IsShown(), "a subagent's bar links to its parent")
+	check(plain(bar.Up.Text:GetText()) == "Started by: Refactor the slot writer" and plain(bar.Up.Status:GetText()) == "Working", "Up names the parent and its status")
+	check(f.Subtitle:GetText() == "Child 5" and hdr.Action:IsShown(), "the child's header fills in from its own row")
+	bar.Up:Click()
+	check(ns.viewId == FAMILY_PARENT and f.Subtitle:GetText() == "Refactor the slot writer", "Up opens the parent, its title shown at once from the family held")
+	check(plain(hdr.Text:GetText()) == "Working  ·  Loading…", "with its status, loading: " .. plain(hdr.Text:GetText()))
+
+	for _, case in ipairs({
+		{ up = { id = FAMILY_PARENT, t = "Base", s = "open", k = "fork" }, text = "Forked from: Base" },
+		{ up = { id = FAMILY_PARENT, t = "Base", s = "open", k = "side" }, text = "Side chat of: Base" },
+		{ up = { id = "e1~sender", t = "Base", s = "open", k = "sent", env = "laptop" }, text = "Sent from laptop: Base" },
+		{ up = { t = "Base", k = "sent" }, text = "Sent from another computer: Base", off = true },
+	}) do
+		ns.Main:SelectThread(KidId(6))
+		ShowFamily(ChildFamily(6, case.up))
+		check(plain(bar.Up.Text:GetText()) == case.text and bar.Up:IsEnabled() == not case.off, "Up reads " .. case.text .. (case.off and ", and can't be opened" or ""))
+	end
+
+	local function label(kinds, statuses)
+		local kids = {}
+		for n, k in ipairs(kinds) do kids[n] = { k = k, s = statuses[n] } end
+		return plain(ns.Family.KidsLabel(kids))
+	end
+	check(label({ "fork", "fork" }, { "open", "settled" }) == "Forks (2)", "Kids names forks")
+	check(label({ "side" }, { "working" }) == "Side chats (1) · 1 working", "Kids names side chats, with how many are working")
+	check(label({ "sent", "sent" }, { "input", "plan" }) == "Sent to other computers (2) · 2 need you", "Kids names threads sent away, with how many need you")
+	check(label({ "sub", "fork", "sent" }, { "waiting", "working", "open" }) == "Started here (3) · 2 working", "mixed children are threads started here")
+end
+
+ns.Main:SelectThread(savedFamily.view)
+data.fam, data.view = savedFamily.fam, savedFamily.data
+data.gen = data.gen + 1
+ns.Transport:Apply(data)
+f:Hide()
+
 -- Launching without a keyboard
 check(ns.Launcher.chord == "PADLTRIGGER-PADRTRIGGER-PADBACK", "controller shortcut: both triggers + Back")
 check(next(Stub.overrides) == nil, "no key bindings overridden (Forever's controller mode ignores them)")

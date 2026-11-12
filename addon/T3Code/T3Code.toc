@@ -23,6 +23,7 @@ UI\Widgets.lua
 UI\MainFrame.lua
 UI\ThreadList.lua
 UI\Transcript.lua
+UI\Family.lua
 UI\Usage.lua
 UI\Settings.lua
 UI\Tracker.lua

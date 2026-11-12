@@ -250,6 +250,7 @@ function M:CreateThreadsPage(page)
 	hint:SetPoint("BOTTOMLEFT", 10, 5)
 	right.Hint = hint
 
+	ns.Family:Create(right, header)
 	ns.Transcript:Create(right, header, composer)
 end
 
@@ -836,8 +837,17 @@ function M:Refresh()
 			local busy = ns.db.settings.steerFollowUps and "Steer the agent" or "Queue a follow-up"
 			self:SetPlaceholder((t.s == "working" and busy or "Message the agent") .. "  (Shift+Enter for a new line)")
 		else
-			f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
-			header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))
+			if ns.viewId then
+				-- Not in the list and its snapshot hasn't come yet: a relative just opened
+				-- from the family bar shows what the family we hold says about it.
+				local rel = ns.Store:Relative(ns.viewId)
+				local status = rel and rel.s and (ns.Color(ns.Store.StatusColor(rel.s), ns.Store.StatusText(rel.s)) .. "  ·  ") or ""
+				f.Subtitle:SetText(rel and rel.t or ns.Color("grey", "Loading…"))
+				header.Text:SetText(status .. ns.Color("grey", "Loading…"))
+			else
+				f.Subtitle:SetText(ns.Color("grey", "No thread selected"))
+				header.Text:SetText(ns.Color("grey", "Pick a thread on the left, or start a new one"))
+			end
 			header.Action:Hide()
 			header.Archive:Hide()
 			header.Snooze:Hide()
@@ -856,6 +866,7 @@ function M:Refresh()
 	f.Bar.Back:SetEnabled(self.mode == "new" or ns.viewId ~= nil or not f.Pages.threads.Left:IsShown())
 	self:UpdateCounter()
 	ns.ThreadList:Refresh()
+	ns.Family:Refresh()
 	ns.Transcript:Refresh()
 end
 
