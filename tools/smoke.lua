@@ -375,7 +375,21 @@ found.always.frame:Click()
 check(ns.Transport:Payload():find("approve\031" .. ns.viewId .. "\031ap1\031acceptAlways", 1, true) ~= nil, "Always allow sends acceptAlways")
 data.gen = data.gen + 1
 data.view.pending = nil
-for _, th in ipairs(data.threads) do if th.id == ns.viewId then th.s = "open" end end
+for _, th in ipairs(data.threads) do if th.id == ns.viewId then th.s = "waiting" th.run = true th.l = "Build bridge half" end end
+ns.Transport:Apply(data)
+check(ns.Main.frame.Bar.Stop:IsEnabled(), "a run waiting on its subagent can be stopped")
+found = {}
+for _, r in ipairs(ns.Transcript.scrollBox._rows) do
+	if r.ed.live then found.live = r.ed.text end
+	if r.ed.label == "Carry on" then found.option = true end
+end
+check(found.live and found.live:find("Build bridge half", 1, true) and not found.option, "the transcript shows what the run waits on, not quick replies")
+data.gen = data.gen + 1
+for _, th in ipairs(data.threads) do if th.id == ns.viewId then th.run = nil end end
+ns.Transport:Apply(data)
+check(not ns.Main.frame.Bar.Stop:IsEnabled(), "waiting between runs has nothing to stop")
+data.gen = data.gen + 1
+for _, th in ipairs(data.threads) do if th.id == ns.viewId then th.s = "open" th.l = nil end end
 ns.Transport:Apply(data)
 
 -- Notices wait during combat

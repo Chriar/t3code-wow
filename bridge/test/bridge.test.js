@@ -782,6 +782,28 @@ test('a waiting thread is listed with what it waits for, timed from the end of i
   assert.equal(t?.s, 'waiting');
   assert.equal(t?.l, 'Watching pull request #7');
   assert.equal(t?.st, Date.parse('2026-01-01T00:05:00Z') / 1000, 'waiting counts from the end of the last run');
+  assert.equal(t?.run, undefined, 'nothing is running to stop');
+});
+
+test('a thread waiting mid-run on its subagent can still be stopped, and churns no slots', () => {
+  const { b } = fakeBridge();
+  const base = { id: 'parent', title: 'Parent', projectId: 'p1', status: 'running', activityRunStatus: 'running', activityRunStartedAt: '2026-01-01T00:00:00Z',
+    latestVisibleMessage: { role: 'assistant', text: 'Starting the subagent' }, pendingBackgroundTasks: [{ taskId: 'a1', description: 'Build bridge half', kind: 'subagent' }] };
+  b.t3.threads.set('parent', { ...base, updatedAt: '2026-01-01T00:01:00Z' });
+  const first = b.buildSnapshot().threads.find((x) => x.id === 'parent');
+  assert.equal(first?.s, 'waiting');
+  assert.equal(first?.run, true, 'the addon is told the run is still going');
+  assert.equal(first?.st, Date.parse('2026-01-01T00:00:00Z') / 1000, 'timed from the start of the run');
+  b.t3.threads.set('parent', { ...base, updatedAt: '2026-01-01T00:02:00Z', latestVisibleMessage: { role: 'assistant', text: 'Still going' } });
+  const second = b.buildSnapshot().threads.find((x) => x.id === 'parent');
+  assert.deepEqual(second, first, 'tool calls during the run change nothing the game is sent');
+});
+
+test('a subagent thread waiting on its own subagent stays listed', () => {
+  const { b } = fakeBridge();
+  b.t3.threads.set('kid', { id: 'kid', title: 'Kid', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1' },
+    updatedAt: new Date().toISOString(), pendingBackgroundTasks: [{ taskId: 'g', kind: 'subagent' }] });
+  assert.equal(b.buildSnapshot().threads.find((x) => x.id === 'kid')?.s, 'waiting');
 });
 
 test('ending a turn into waiting is not announced; the wait ending is', async () => {
