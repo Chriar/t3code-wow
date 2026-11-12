@@ -9,6 +9,12 @@ _G.WOWSTUB = Stub
 
 local function noop() end
 
+-- A ScrollingEditBox's inner EditBox shows its owner's text.
+local function TextOf(self)
+	local owner = rawget(self, "_owner")
+	return (owner or self)._text or ""
+end
+
 local GETTERS = {
 	GetWidth = function(self) return self._w or 600 end,
 	GetHeight = function(self) return self._h or 400 end,
@@ -24,7 +30,13 @@ local GETTERS = {
 	IsEnabled = function(self) return self._enabled ~= false end,
 	GetAtlas = function(self) return self._atlas end,
 	GetPoint = function() return "CENTER", nil, "CENTER", 0, 0 end,
-	GetEditBox = function(self) self._eb = self._eb or Stub.NewFrame("EditBox") return self._eb end,
+	GetEditBox = function(self)
+		self._eb = self._eb or Stub.NewFrame("EditBox")
+		self._eb._owner = self
+		return self._eb
+	end,
+	-- A byte offset, at the end of the text until something moves it.
+	GetCursorPosition = function(self) local n = #TextOf(self) return math.min(self._cursor or n, n) end,
 	IsObjectType = function() return false end,
 	GetName = function(self) return self._name end,
 	GetParent = function(self) return self._parent end,
@@ -50,7 +62,12 @@ local SETTERS = {
 	SetWidth = function(self, w) self._w = w end,
 	SetHeight = function(self, h) self._h = h end,
 	SetSize = function(self, w, h) self._w, self._h = w, h end,
-	SetText = function(self, t) self._text = t and tostring(t) or "" end,
+	SetText = function(self, t)
+		self._text = t and tostring(t) or ""
+		self._cursor = nil
+		if self._eb then self._eb._cursor = nil end
+	end,
+	SetCursorPosition = function(self, n) self._cursor = n end,
 	Show = function(self)
 		local was = self._shown
 		self._shown = true
@@ -346,6 +363,13 @@ function Stub.Fire(event, ...)
 	for frame in pairs(Stub.events[event] or {}) do
 		if frame._scripts.OnEvent then frame._scripts.OnEvent(frame, event, ...) end
 	end
+end
+
+-- Fire a callback registered with RegisterCallback (a ScrollingEditBox's OnTextChanged,
+-- say), as the frame's mixin would.
+function Stub.Callback(frame, event, ...)
+	local cbs = rawget(frame, "_callbacks")
+	if cbs and cbs[event] then cbs[event](...) end
 end
 
 function Stub.Tick(seconds)

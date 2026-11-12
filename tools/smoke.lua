@@ -408,6 +408,149 @@ check(ns.Main.composer._text:find("the list flickers", 1, true) and ns.Main.comp
 check(ns.Transport:Payload():find("\031shot\031", 1, true) ~= nil, "report asks the bridge for a screenshot")
 ns.Main.composer._text = ""
 
+-- Suggestions above the message box: "/" lists the provider's slash commands, "$" its
+-- skills. The checks bring their own list, so they don't depend on the snapshot's.
+do
+	local S, main = ns.Suggest, ns.Main
+	local box = main.composer
+	local eb = box:GetEditBox()
+	for _, g in ipairs(data.models and data.models.g or {}) do
+		for _, p in ipairs(g.p or {}) do
+			if p.c then check(ns.Store:Commands(g.e or "", p.i) == p.c, "the snapshot's commands and skills are kept for " .. p.i .. ": " .. #p.c) end
+		end
+	end
+	local env, instanceId = main:NextProvider()
+	check(instanceId ~= nil, "the open thread's provider is known: " .. tostring(instanceId))
+	local saved = ns.Store.commands
+	local list = {
+		{ t = "/pr-comments", d = "Get comments from a pull request" },
+		{ t = "/compact", d = "Summarize the conversation" },
+		{ t = "/review" },
+		{ t = "/status", d = "Show || status" },
+		{ t = "$deploy", d = "Ship it" },
+		{ t = "$code-review", d = "Review the code" },
+	}
+	ns.Store.commands = { [env] = { [instanceId] = list } }
+	local function typed(text, cursor)
+		box._text, eb._cursor, box._focus = text, cursor, true
+		Stub.Callback(box, "OnTextChanged", eb, true)
+	end
+	local function names()
+		local out = {}
+		for _, e in ipairs(S.state and S.state.matches or {}) do table.insert(out, e.t) end
+		return table.concat(out, " ")
+	end
+	local queued = #ns.Transport.queue
+
+	typed("/")
+	check(S.state and S.frame:IsShown() and names() == "/pr-comments /compact /review /status", "a bare / lists every slash command: " .. names())
+	local p = S.frame._points[1]
+	check(p[1] == "BOTTOMLEFT" and p[2] == main.frame.Pages.threads.Right.ComposerInset and p[3] == "TOPLEFT", "the list sits on top of the message box")
+	typed("$")
+	check(names() == "$deploy $code-review", "$ lists the skills: " .. names())
+	typed("/CO")
+	check(names() == "/compact /pr-comments", "typing filters it, names that start with the text first: " .. names())
+	typed("/zzz")
+	check(S.state == nil and not S.frame:IsShown(), "nothing matches: no list")
+	typed("path/to/file")
+	check(S.state == nil, "a / inside a word is not a command")
+
+	typed("/co")
+	eb._scripts.OnArrowPressed(eb, "DOWN")
+	check(S.state.index == 2 and eb:GetCursorPosition() == 3, "Down moves the highlight and leaves the cursor where it was")
+	eb._scripts.OnTabPressed(eb)
+	check(box._text == "/pr-comments " and eb:GetCursorPosition() == #box._text and S.state == nil, "Tab puts the highlighted one in, with a space: " .. box._text)
+
+	typed("fix this /re now", 12)
+	check(names() == "/review", "a token mid-message is suggested too: " .. names())
+	eb._scripts.OnTabPressed(eb)
+	check(box._text == "fix this /review now" and eb:GetCursorPosition() == 17, "it replaces the token without doubling the space after it: " .. box._text)
+
+	typed("/comp")
+	Stub.Callback(box, "OnEnterPressed", eb)
+	check(box._text == "/compact " and #ns.Transport.queue == queued and S.state == nil, "Enter with the list open puts the command in and sends nothing")
+	local shift = IsShiftKeyDown
+	_G.IsShiftKeyDown = function() return true end
+	typed("/comp")
+	Stub.Callback(box, "OnEnterPressed", eb)
+	_G.IsShiftKeyDown = shift
+	check(box._text == "/comp\n" and #ns.Transport.queue == queued, "Shift+Enter still starts a new line")
+
+	local long = {}
+	for i = 1, 20 do long[i] = { t = string.format("/cmd%02d", i) } end
+	ns.Store.commands = { [env] = { [instanceId] = long } }
+	typed("/")
+	for _ = 1, 9 do eb._scripts.OnArrowPressed(eb, "DOWN") end
+	check(S.state.index == 10 and S.state.offset == 3 and S.frame.Rows[8].index == 10, "Down past the last row scrolls the list")
+	S.frame._scripts.OnMouseWheel(S.frame, -1)
+	check(S.state.offset == 6 and S.state.index == 10, "the wheel scrolls it")
+	S.frame._scripts.OnMouseWheel(S.frame, 1)
+	S.frame._scripts.OnMouseWheel(S.frame, 1)
+	check(S.state.offset == 1 and S.state.index == 8, "and keeps the highlight among the rows on screen")
+	ns.Store.commands = { [env] = { [instanceId] = list } }
+
+	typed("/st")
+	S.frame.Rows[1]:Click()
+	check(box._text == "/status " and box._focus and S.state == nil, "a click picks it and keeps the message box focused")
+
+	typed("/")
+	Stub.Callback(box, "OnEscapePressed", eb)
+	check(S.state == nil and not S.frame:IsShown() and box._focus, "Esc closes the list and keeps the message box")
+	Stub.Callback(box, "OnEscapePressed", eb)
+	check(not box._focus, "Esc again leaves the message box")
+
+	typed("/compact please")
+	check(S.state == nil, "past the token the list is closed")
+	Stub.Callback(box, "OnEnterPressed", eb)
+	check(#ns.Transport.queue == queued + 1 and ns.Transport:Payload():find("/compact please", 1, true) ~= nil, "Enter with the list closed sends the message as typed")
+	table.remove(ns.Transport.queue)
+	ns.Transcript.echo[ns.viewId] = nil
+
+	box._focus, box._text = false, "/"
+	Stub.Callback(box, "OnTextChanged", eb, true)
+	check(S.state == nil, "no list while the message box isn't focused")
+	typed("/")
+	Stub.Callback(box, "OnTextChanged", eb, false)
+	check(S.state == nil, "text the addon puts in the box closes the list")
+	typed("/")
+	main.frame:Hide()
+	check(S.state == nil, "closing the window closes the list")
+	main:Open()
+	typed("/")
+	main:StartNewThread()
+	check(S.state == nil, "starting a new thread closes the list")
+	main:Back()
+
+	local insert = main.frame.Bar.Insert
+	main:Refresh()
+	check(insert:IsEnabled(), "the insert button is on when the provider has a list")
+	box._text, eb._cursor = "run", nil
+	insert:Click()
+	local l = ns.UI.ListOpen()
+	check(l and l.owner == insert and l._points[1][1] == "BOTTOMLEFT" and l._points[1][3] == "TOPLEFT", "it opens the shared list above itself")
+	local headers, row = {}, nil
+	for _, r in ipairs(l.Box._rows) do
+		if r.ed.header then table.insert(headers, r.ed.label) end
+		if r.ed.value == "$deploy" then row = r.frame end
+	end
+	check(table.concat(headers, ",") == "Commands,Skills", "commands and skills under their own headers: " .. table.concat(headers, ","))
+	row:Click()
+	check(ns.UI.ListOpen() == nil and box._text == "run $deploy " and box._focus, "a pick goes in at the cursor, after a space: " .. box._text)
+
+	ns.Store.commands = {}
+	main:Refresh()
+	check(not insert:IsEnabled(), "the insert button is off when the provider has no list")
+	typed("/")
+	check(S.state == nil, "and typing / suggests nothing")
+
+	ns.Store.commands = saved
+	box:SetText("")
+	box._focus = false
+	ns.db.drafts[ns.viewId] = nil
+	ns.db.drafts.__new = nil
+	main:Refresh()
+end
+
 -- Attending flag: set while the window is in use, cleared after 90s idle
 ns.Main:Open()
 ns.Interacted()
@@ -459,6 +602,26 @@ check(f._scripts.OnGamePadStick(f, "Left", 0, -1) == false, "left stick consumed
 check(down(f, "PADFORWARD") == false and f._shown == false and not ns.Gamepad.capturing, "Start closes the window and gives the controller back")
 ns.Main:Open()
 check(ns.Gamepad.capturing, "reopened window takes the controller again")
+-- Commands and skills from the controller: the bar's insert button, then a row.
+do
+	local saved = ns.Store.commands
+	local env, instanceId = ns.Main:NextProvider()
+	ns.Store.commands = { [env] = { [instanceId] = { { t = "/compact" }, { t = "$deploy" } } } }
+	ns.Main:Refresh()
+	local insert, reachable = f.Bar.Insert, false
+	for _, c in ipairs(ns.Gamepad:Candidates()) do if c.w == insert then reachable = true end end
+	check(reachable, "the controller can reach the insert button")
+	ns.Main.composer:SetText("")
+	ns.Gamepad:Highlight(insert)
+	down(f, "PAD1")
+	check(ns.UI.ListOpen() and ns.UI.ListOpen().owner == insert, "A on it opens the list")
+	down(f, "PAD1")
+	check(ns.Main.composer._text == "/compact " and ns.Gamepad.selected == ns.Main.composer, "A on a row puts it in and lands on the message box")
+	ns.Store.commands = saved
+	ns.Main.composer:SetText("")
+	ns.Main.composer._focus = false
+	ns.Main:Refresh()
+end
 -- The model picker sits on the header row: D-pad to it, A opens its list, B closes it.
 do
 	local prevView = ns.viewId
