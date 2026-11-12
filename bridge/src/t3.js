@@ -327,9 +327,11 @@ export class T3Client extends EventEmitter {
   }
 
   subscribeAll() {
+    // Idle subagent threads too: a thread's family is read from this shell. They only
+    // cost the first snapshot, since an idle thread sends no updates.
     this.request(
       'orchestration.subscribeShell',
-      { omitIdleSubagents: true, omitOlderSettled: true },
+      { omitIdleSubagents: false, omitOlderSettled: true },
       { onChunk: (v) => this.onShell(v), timeout: 0 },
     ).catch((err) => this.log(`shell subscription ended: ${err.message}`));
     this.request('subscribeServerConfig', {}, { onChunk: (v) => this.onConfig(v), timeout: 0 }).catch((err) =>
