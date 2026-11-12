@@ -34,6 +34,10 @@ const sec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) : undefined);
 
 // A short, stable hash of one part of a snapshot. The addon reports the ones it holds
 // in its hello, and a publish leaves out a part whose hash hasn't changed since.
+// T3 Code keeps the status of a subagent the provider started (Claude's own) on its
+// parent's projection; the subagent's thread stays idle while it runs.
+const SUBAGENT_STATUS = { running: 'working', failed: 'failed' };
+
 const fingerprint = (value) => createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 16);
 
 // The parts a publish may leave out while the addon holds them, in the order its hello
@@ -747,8 +751,13 @@ export class Bridge {
         const msgs = p.messages || [];
         const last = msgs.at(-1);
         v.contentKey = [msgs.length, last?.text?.length, last?.updatedAt, pendingRequest(p)?.id, proposedPlan(p)?.length, (p.runs || []).filter((r) => r.status === 'queued').length].join('|');
+        const prevSubs = v.subs;
+        v.subs = (p.subagents || []).map((a) => a.status).join();
         if (threadId === this.client?.view) this.markDirty(v.contentKey !== prevContent ? 'view' : 'minor');
-        else if (activityLabel(p) !== prevLabel) this.markDirty('minor');
+        else if (activityLabel(p) !== prevLabel || v.subs !== prevSubs) this.markDirty('minor');
+        // An open subagent's status lives on its parent, so keep the parent loaded too.
+        const up = this.t3.threads.get(threadId)?._from;
+        if (threadId === this.client?.view && up?.kind === 'sub' && up.key) this.refreshView(up.key);
       })
       .catch((err) => this.log(`thread ${threadId.slice(0, 8)}: ${err.message}`))
       .finally(() => {
@@ -978,7 +987,7 @@ export class Bridge {
       // Its list row without what changes while nothing shown does: the activity (no
       // detail passed), the unread mark, the last reply, and the update time, for
       // which the end of its last run stands in.
-      const s = threadStatus(t);
+      const s = this.statusOf(t);
       me = { ...threadRow(t, s), un: undefined, last: undefined, u: s === 'working' ? undefined : sec(t.latestRunCompletedAt || t.createdAt) };
     }
     if (!up && !kids.length && !me) return undefined;
@@ -989,8 +998,16 @@ export class Bridge {
       id: viewId,
       me,
       up: up ? { id: up.key || undefined, t: title(up.thread?.title ?? up.title), s: up.thread ? threadStatus(up.thread) : undefined, k: up.kind, env: away(up.env) } : undefined,
-      kids: kids.length ? kids.map((k) => ({ id: k.id, t: title(k.title), s: threadStatus(k), k: k._from.kind, env: away(k._env) })) : undefined,
+      kids: kids.length ? kids.map((k) => ({ id: k.id, t: title(k.title), s: this.statusOf(k), k: k._from.kind, env: away(k._env) })) : undefined,
     };
+  }
+
+  // A thread's status, with a provider-started subagent's taken from its loaded parent.
+  statusOf(t) {
+    const s = threadStatus(t);
+    const up = t._from?.kind === 'sub' && s === 'open' ? this.views.get(t._from.key)?.projection : null;
+    const id = up && this.t3.split(t.id).id;
+    return SUBAGENT_STATUS[up?.subagents?.find((a) => a.childThreadId === id)?.status] || s;
   }
 
   // Every machine's model list for the game's model picker, with a short hash the
