@@ -806,6 +806,24 @@ test('a subagent thread waiting on its own subagent stays listed', () => {
   assert.equal(b.buildSnapshot().threads.find((x) => x.id === 'kid')?.s, 'waiting');
 });
 
+test('a thread whose child threads still run is waiting on them, as in T3 Code', () => {
+  const { b } = fakeBridge();
+  const said = [];
+  b.announce = (t, status) => said.push(status);
+  const now = new Date().toISOString();
+  // T3 Code lists no pending task on the parent for a delegated child thread.
+  const lead = { id: 'lead', title: 'Lead', projectId: 'p1', status: 'completed', latestRunCompletedAt: '2026-01-01T00:05:00Z', updatedAt: now };
+  const kid = { id: 'kid', title: 'Kid', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 'lead' }, updatedAt: now };
+  b.t3.threads.set('lead', lead);
+  b.t3.threads.set('kid', kid);
+  b.onT3Change({ kind: 'thread', prev: { ...lead, status: 'running', activityRunStatus: 'running' }, thread: lead });
+  assert.deepEqual(said, [], 'the parent’s run ending while a child runs is not announced');
+  const row = () => b.buildSnapshot().threads.find((x) => x.id === 'lead');
+  assert.deepEqual([row().s, row().l, row().st], ['waiting', 'Waiting on 1 subagent', Date.parse('2026-01-01T00:05:00Z') / 1000]);
+  b.t3.threads.set('kid', { ...kid, status: 'completed', activityRunStatus: null });
+  assert.equal(row().s, 'open', 'done once its children are');
+});
+
 test('ending a turn into waiting is not announced; the wait ending is', async () => {
   const { b } = fakeBridge();
   const said = [];
