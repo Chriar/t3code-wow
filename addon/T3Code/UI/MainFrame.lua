@@ -896,6 +896,22 @@ function M:ThreadModel(t)
 	return current
 end
 
+-- The machine and provider instance the next message goes to, or nil when no model
+-- is known. Threads on another machine use that machine's providers.
+function M:NextProvider()
+	local env, key
+	if self.mode == "new" then
+		env, key = ns.Store.EnvOf(self.newProject), self:NewThreadModel()
+	else
+		local t = ns.Store:Thread(ns.viewId)
+		if not t then return nil end
+		env, key = ns.Store.EnvOf(t.id), self:ThreadModel(t)
+	end
+	local instanceId = ns.Store.SplitModelKey(key)
+	if not instanceId then return nil end
+	return env, instanceId
+end
+
 -- Fill the model dropdown for what's on screen. Returns whether it's shown.
 function M:SetupModelDropdown()
 	local dd = self.frame.Pages.threads.Right.Header.Model
