@@ -11,6 +11,9 @@ local Store = {
 	-- change (we report modelsHash in the hello), so they outlive each snapshot.
 	models = {},
 	modelsHash = "",
+	-- Each provider's slash commands and skills, by machine and instance: they ride
+	-- with the model list and live as long as it does.
+	commands = {},
 	-- What the bridge last sent for the parts it may leave out of an update. We report
 	-- them in the hello, so a snapshot that omits them is still complete for us.
 	listKey = "",
@@ -72,18 +75,20 @@ function Store:Apply(data)
 	end
 	if type(data.models) == "table" and type(data.models.g) == "table" then
 		-- Flattened per machine, in T3's order: { i, s, l, p = provider, r = levels }.
-		local models = {}
+		local models, commands = {}, {}
 		for _, g in ipairs(data.models.g) do
-			local list = {}
+			local list, byInstance = {}, {}
 			for _, p in ipairs(type(g.p) == "table" and g.p or {}) do
 				for _, m in ipairs(type(p.m) == "table" and p.m or {}) do
 					local levels = m.r and g.x and g.x[m.r]
 					table.insert(list, { i = p.i, s = m.s, l = m.l, p = p.n or p.i, r = type(levels) == "table" and levels or nil })
 				end
+				if p.i and type(p.c) == "table" and #p.c > 0 then byInstance[p.i] = p.c end
 			end
 			models[g.e or ""] = list
+			commands[g.e or ""] = byInstance
 		end
-		self.models, self.modelsHash = models, tostring(data.models.h or "")
+		self.models, self.commands, self.modelsHash = models, commands, tostring(data.models.h or "")
 	end
 
 	if self.applied > 1 then
@@ -253,6 +258,13 @@ function Store:LastEffort(env, key)
 		end
 	end
 	return best and best.re
+end
+
+-- A provider's slash commands and skills, { t = "/name" or "$name", d = description },
+-- or nil when it has none.
+function Store:Commands(env, instanceId)
+	local machine = self.commands[env or ""]
+	return machine and instanceId and machine[instanceId] or nil
 end
 
 function Store.HasOption(options, value)
